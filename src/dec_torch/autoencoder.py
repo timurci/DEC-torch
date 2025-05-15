@@ -65,8 +65,8 @@ class CoderConfig:
 @dataclass(frozen=True)
 class AutoEncoderConfig:
     """Configuration for AutoEncoder module"""
-    encoder_config: CoderConfig
-    decoder_config: CoderConfig
+    encoder: CoderConfig
+    decoder: CoderConfig
 
     @staticmethod
     def build(
@@ -103,15 +103,15 @@ class AutoEncoderConfig:
             **shared_kwargs
         )
         return AutoEncoderConfig(
-            encoder_config=encoder_config,
-            decoder_config=decoder_config
+            encoder=encoder_config,
+            decoder=decoder_config
         )
 
 
 @dataclass(frozen=True)
 class StackedAutoEncoderConfig:
     """Configuration for StackedAutoEncoder module"""
-    autoencoder_configs: list[AutoEncoderConfig]
+    autoencoders: list[AutoEncoderConfig]
 
     @staticmethod
     def build(
@@ -122,7 +122,7 @@ class StackedAutoEncoderConfig:
             hidden_activation: str = "relu",
             trailing_activation: str = "linear"
     ) -> "StackedAutoEncoderConfig":
-        """Initialize an SAE with a higher-level configuration
+        """Initialize an SAE configuration with higher-level options
 
         Arguments:
         hidden_dims: Number of hidden layer units of each encoder and decoder.
@@ -140,13 +140,7 @@ class Coder(nn.Module):
             self,
             config: CoderConfig
     ):
-        """Initialize the model according to specified dimensions and layers.
-
-        Args:
-        input_dim: Input size of the model.
-        output_dim: Output size of the model.
-        hidden_dims: Number of units in each hidden layer.
-        """
+        """Initialize a Coder with specified configuration."""
         super().__init__()
 
         self.config = config
@@ -183,24 +177,61 @@ class AutoEncoder(nn.Module):
     def __init__(
             self,
             config: AutoEncoderConfig,
+            encoder: Optional[Coder] = None,
+            decoder: Optional[Coder] = None
     ):
-        """Initialize the model according to specified dimensions and layers.
+        """Initialize an AE with specified configuration or existing modules.
 
-        Args:
-        input_dim: Input and output size of the model.
-        latent_dim: Size of the latent space vector.
-        encoder_hidden_dims: Number of units in each hidden layer of encoder.
-        decoder_hidden_dims: Number of units in each hidden leyer of decoder.
+        Arguments:
+        config: Configuration is used if encoder or decoder is not provided.
+        encoder: Use an existing encoder module (without deepcopy).
+        decoder: Use an existing decoder module (without deepcopy).
         """
         super().__init__()
 
-        self.config = config
+        self.encoder = encoder or Coder(config.encoder)
+        self.decoder = decoder or Coder(config.decoder)
 
-        self.encoder = Coder(config.encoder_config)
-        self.decoder = Coder(config.decoder_config)
+        self.config = AutoEncoderConfig(
+            encoder=self.encoder.config,
+            decoder=self.decoder.config
+        )
 
     def forward(self, x):
         x = self.encoder(x)
         x = self.decoder(x)
 
         return x
+
+    def fit(self):
+        """Train the AutoEncoder to minimize reconstruction loss"""
+        raise NotImplementedError()
+
+
+class StackedAutoEncoder(nn.Module):
+    """Generic stacked autoencoder (SAE) model"""
+    def __init__(
+            self,
+            config: StackedAutoEncoderConfig,
+    ):
+        """Initialize an SAE with specified configuration.
+
+        Arguments:
+        config:
+        """
+        super().__init__()
+
+        self.config = config
+        encoders = [Coder(cfg.encoder) for cfg in config.autoencoders]
+        decoders = [Coder(cfg.decoder) for cfg in config.autoencoders]
+
+        self.encoders = nn.ModuleList(encoders)
+        self.decoders = nn.ModuleList(reversed(decoders))
+
+    def greedy_fit(self):
+        """Perform greedy layer-wise training on autoencoders"""
+        raise NotImplementedError()
+
+    def fit(self):
+        """Perform global loss optimization of SAE"""
+        raise NotImplementedError()
