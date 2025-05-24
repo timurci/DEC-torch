@@ -3,7 +3,7 @@ from torch import nn
 
 from torch.utils.data import DataLoader
 
-from typing import Optional
+from sklearn.cluster import KMeans
 
 
 def init_clusters_random(
@@ -11,16 +11,17 @@ def init_clusters_random(
         latent_dim: int,
         mean: float = 0.0,
         std: float = 1.0,
-        device: Optional[str] = None,
-):
+) -> torch.Tensor:
     """Initialize cluster by sampling from normal distribution.
 
+    Returns:
+    torch.Tensor: Cluster centroids (n_cluster, latent_dim).
+
+    Notes:
     This is not a recommended method to initialize the cluster centers,
     since it is unaware of the data distribution in latent space.
     """
     clusters = torch.normal(mean, std, size=(n_clusters, latent_dim))
-    if device:
-        clusters = clusters.to(device)
     return clusters
 
 
@@ -28,22 +29,37 @@ def init_clusters(
         n_clusters: int,
         data_loader: DataLoader,
         encoder: nn.Module,
-        method: str = "k-means",
-        device: Optional[str] = None,
-):
-    """Initialize clusters by clustering embeddings of all data at once.
+        device: str,
+) -> torch.Tensor:
+    """Initialize centroids via k-means algorithm using all data at once.
 
     Arguments:
     n_clusters: Number of clusters to initialize.
     data_loader: DataLoader where all data is extracted at once.
     encoder: Encoder module to get the latent representation of inputs.
-    method: Specifies the clustering method. Options: k-means, hierarchical.
-    device: Specifies which computation divce to load the data on.
+    device: Encoder-compatible tensor computation device to load the data.
 
-    Hint: It is possible to use a subset of the dataset to initialize
+    Returns:
+    torch.Tensor: Cluster centroids (n_cluster, latent_dim).
+
+    Notes:
+    It is possible to use a subset of the dataset to initialize
     the cluster centers using `torch.utils.data.Subset` class.
     """
-    raise NotImplementedError()
+    data = torch.Tensor([])
+    for batch in data_loader:
+        if isinstance(batch, (list, tuple)):
+            batch = batch[0]  # assuming the first element is input
+        data = torch.cat((data, batch))
+    data = data.to(device)
+
+    encoder.eval()
+    with torch.no_grad():
+        z = encoder(data).detach().cpu().numpy()
+        kmeans = KMeans(n_clusters)
+        kmeans.fit(z)
+        centroids = torch.Tensor(kmeans.cluster_centers_)
+        return centroids
 
 
 class DEC(nn.Module):
