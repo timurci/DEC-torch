@@ -1,7 +1,18 @@
+import torch
 from torch import nn
+from torch.utils.data import DataLoader
+
+import pandas as pd
 
 from dataclasses import dataclass
 from typing import Optional
+
+from training import train_model
+
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 _ACTIVATION_REGISTRY: dict[str, type[nn.Module] | None] = {
@@ -203,9 +214,26 @@ class AutoEncoder(nn.Module):
 
         return x
 
-    def fit(self):
-        """Train the AutoEncoder to minimize reconstruction loss"""
-        raise NotImplementedError()
+    def fit(
+            self,
+            train_loader: DataLoader,
+            optimizer: torch.optim.Optimizer,
+            loss_fn: nn.modules.loss._Loss,
+            **kwargs
+    ) -> pd.DataFrame:
+        """Train the AutoEncoder to minimize reconstruction loss.
+
+        Notes:
+        See `.training.train_model()` for the details of the parameters.
+        """
+        device = next(self.parameters()).device
+        history = train_model(self,
+                              train_loader,
+                              optimizer,
+                              loss_fn,
+                              **kwargs,
+                              device=device)
+        return history
 
 
 class StackedAutoEncoder(nn.Module):
@@ -214,11 +242,7 @@ class StackedAutoEncoder(nn.Module):
             self,
             config: StackedAutoEncoderConfig,
     ):
-        """Initialize an SAE with specified configuration.
-
-        Arguments:
-        config:
-        """
+        """Initialize an SAE with specified configuration."""
         super().__init__()
 
         self.config = config
@@ -228,10 +252,76 @@ class StackedAutoEncoder(nn.Module):
         self.encoders = nn.ModuleList(encoders)
         self.decoders = nn.ModuleList(reversed(decoders))
 
-    def greedy_fit(self):
-        """Perform greedy layer-wise training on autoencoders"""
+    def greedy_fit(
+            self,
+            train_loader: DataLoader,
+            optimizer: torch.optim.Optimizer,
+            loss_fn: nn.modules.loss._Loss,
+            **kwargs
+    ) -> list[pd.DataFrame]:
+        """Perform greedy layer-wise training on autoencoders.
+
+        Returns:
+        list[pandas.DataFrame]: Loss history for each autoencoder.
+
+        Notes:
+        See `.training.train_model()` for the details of the parameters.
+        """
+        device = next(self.parameters()).device
+
+        def transform_fn(encoders: list[nn.Module], device=None):
+            """Return a transform function from a list of encoders."""
+            net = nn.Sequential(*encoders)
+            if device:
+                net.to(device)
+            net.eval()
+
+            def transform(x):
+                with torch.no_grad():
+                    return net(x)
+
+            return transform
+
+        coder_pairs = zip(self.encoders, reversed(self.decoders))
+        trained_encoders = []
+        history_encoders = []
+
+        for i, (encoder, decoder) in enumerate(coder_pairs):
+            logger.info("Training autoencoder " + str(i))
+
+            config = AutoEncoderConfig(encoder=encoder.config,
+                                       decoder=decoder.config)
+            autoencoder = AutoEncoder(config, encoder, decoder)
+            autoencoder = autoencoder.to(device)
+            history = autoencoder.fit(train_loader,
+                                      optimizer,
+                                      loss_fn,
+                                      **kwargs,
+                                      device=device,
+                                      transform=transform_fn(trained_encoders,
+                                                             device=device))
+            trained_encoders.append(encoder)
+            history_encoders.append(history)
+
         raise NotImplementedError()
 
-    def fit(self):
-        """Perform global loss optimization of SAE"""
-        raise NotImplementedError()
+    def fit(
+            self,
+            train_loader: DataLoader,
+            optimizer: torch.optim.Optimizer,
+            loss_fn: nn.modules.loss._Loss,
+            **kwargs
+    ) -> pd.DataFrame:
+        """Perform global loss optimization of SAE.
+
+        Notes:
+        See `.training.train_model()` for the details of the parameters.
+        """
+        device = next(self.parameters()).device
+        history = train_model(self,
+                              train_loader,
+                              optimizer,
+                              loss_fn,
+                              **kwargs,
+                              device=device)
+        return history

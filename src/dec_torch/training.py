@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader
 import pandas as pd
 import math
 
-from typing import Optional, NamedTuple
+from typing import Optional, NamedTuple, Callable
 from enum import Enum
 
 import logging
@@ -107,12 +107,32 @@ def train_model(
         optimizer: torch.optim.Optimizer,
         loss_fn: nn.modules.loss._Loss,
         val_loader: Optional[DataLoader] = None,
-        device: Optional[str] = None,
+        device: Optional[str | torch.device] = None,
         n_epoch: int = 100,
         verbose: bool = True,
-        max_verbose: int = 20
+        max_verbose: int = 20,
+        transform: Optional[Callable] = None,
 ) -> pd.DataFrame:
-    """Train a PyTorch module with specified hyperparameters."""
+    """Train an autoencoder module with specified hyperparameters.
+
+    Arguments:
+    model: `AutoEncoder` or `StackedAutoEncoder` module.
+    train_loader: DataLoader of training set.
+    optimizer: Optimizer tied to `model.parameters()`.
+    val_loader: DataLoader of validation set.
+    device: Tensor computation device to load the data.
+    n_epoch: Total number of epochs during training.
+    verbose: Specifies if training performance reported via logging module.
+    max_verbose: Maximum (or +1) number of lines to log.
+    transform: Apply transformation on the loaded batch.
+
+    Returns:
+    pandas.DataFrame: Training and validation loss history.
+
+    Notes:
+    `transform` is added to transform the input using sequential encoders
+    during layer-wise training phase of a `StackedAutoEncoder`.
+    """
     phases = [("training", train_loader, _train_pass)]
 
     if val_loader is not None:
@@ -127,16 +147,19 @@ def train_model(
         for phase, loader, phase_pass in phases:
             sum_sq_error = 0.
             n_samples = 0
-            for batch_input, batch_target in loader:
+            for batch in loader:
+                if isinstance(batch, (list, tuple)):
+                    batch = batch[0]
                 if device:
-                    batch_input = batch_input.to(device)
-                    batch_target = batch_target.to(device)
+                    batch = batch.to(device)
+                if transform:
+                    batch = transform(batch)
 
                 batch_mse = phase_pass(model,
-                                       batch_input, batch_target,
+                                       batch, batch,
                                        loss_fn, optimizer)
 
-                batch_size = batch_input.size(0)
+                batch_size = batch.size(0)
                 n_samples += batch_size
                 sum_sq_error += batch_mse * batch_size
 
@@ -150,6 +173,8 @@ def train_model(
                    f"Train. loss: {train_loss:.4f} | "
                    f"Val. loss: {val_loss:.4f} |")
             logger.info(msg)
+
+    return tracker.history
 
 
 def _verbosity_steps(n_epoch: int, max_verbose: int) -> set[int]:
