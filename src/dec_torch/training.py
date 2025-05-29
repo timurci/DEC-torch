@@ -5,7 +5,8 @@ from torch.utils.data import DataLoader
 import pandas as pd
 import math
 
-from typing import Optional, NamedTuple, Callable
+from typing import Optional, NamedTuple, Union
+from collections.abc import Callable, Sequence
 from enum import Enum
 
 import logging
@@ -69,7 +70,7 @@ class HistoryTracker:
 def _train_pass(
         net: nn.Module,
         input: torch.Tensor,
-        target: torch.Tensor,
+        target: Union[torch.Tensor, Callable],
         loss_fn: nn.modules.loss._Loss,
         optimizer: torch.optim.Optimizer
 ):
@@ -77,6 +78,8 @@ def _train_pass(
     optimizer.zero_grad()
 
     output = net(input)
+    if isinstance(target, Callable):
+        target = target(output)
     loss = loss_fn(output, target)
 
     loss.backward()
@@ -88,7 +91,7 @@ def _train_pass(
 def _test_pass(
         net: nn.Module,
         input: torch.Tensor,
-        target: torch.Tensor,
+        target: Union[torch.Tensor, Callable],
         loss_fn: nn.modules.loss._Loss,
         optimizer: Optional[torch.optim.Optimizer] = None  # not used
 ):
@@ -96,9 +99,47 @@ def _test_pass(
 
     with torch.no_grad():
         output = net(input)
+        if isinstance(target, Callable):
+            target = target(output)
         loss = loss_fn(output, target)
 
         return loss.item()
+
+
+def _extract_batch_pairs(
+        batch: Union[
+            torch.Tensor,
+            tuple[torch.Tensor],
+            tuple[torch.Tensor, torch.Tensor | Callable],
+            Sequence,
+        ],
+        device: Optional[str | torch.device] = None,
+        transform: Optional[Callable] = None,
+):
+    """Extract input-target pairs from a batch.
+
+    Arguments:
+    batch: Input tensor or a sequence of (input, target).
+    device: Tensor computation device.
+    transform: Transforms the input. Applied after loading input to the device.
+    """
+    if isinstance(batch, Sequence) and len(batch) > 1:
+        batch_input, batch_target = batch[0], batch[1]
+    else:
+        batch_input = batch[0] if isinstance(batch, Sequence) else batch
+        batch_target = None
+
+    if device:
+        batch_input = batch_input.to(device)
+        if isinstance(batch_target, torch.Tensor):
+            batch_target = batch_target.to(device)
+    if transform:
+        batch_input = transform(batch_input)
+
+    if batch_target is None:
+        batch_target = batch_input
+
+    return batch_input, batch_target
 
 
 def train_model(
@@ -130,6 +171,12 @@ def train_model(
     pandas.DataFrame: Training and validation loss history.
 
     Notes:
+    `DataLoader` is expected to return either a Tensor (just the input) to
+    train an autoencoder, or a tuple consisting of input and target of type
+    `tuple[Tensor, Tensor]`. Target could also be a function (i.e `Callable`),
+    which will be used to derive the target value from the output of the model
+    by calling `target(model(input))`.
+
     `transform` is added to transform the input using sequential encoders
     during layer-wise training phase of a `StackedAutoEncoder`.
     """
@@ -148,15 +195,12 @@ def train_model(
             sum_sq_error = 0.
             n_samples = 0
             for batch in loader:
-                if isinstance(batch, (list, tuple)):
-                    batch = batch[0]
-                if device:
-                    batch = batch.to(device)
-                if transform:
-                    batch = transform(batch)
-
+                batch_input, batch_target = _extract_batch_pairs(batch,
+                                                                 device,
+                                                                 transform)
                 batch_mse = phase_pass(model,
-                                       batch, batch,
+                                       batch_input,
+                                       batch_target,
                                        loss_fn, optimizer)
 
                 batch_size = batch.size(0)

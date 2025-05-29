@@ -3,7 +3,10 @@ from torch import nn
 
 from torch.utils.data import DataLoader
 
+import pandas as pd
 from sklearn.cluster import KMeans
+
+from training import train_model
 
 
 def init_clusters_random(
@@ -92,6 +95,27 @@ class DEC(nn.Module):
                                  self.centroids,
                                  self.alpha)
         return q
+
+    def fit(
+            self,
+            train_loader: DataLoader,
+            optimizer: torch.optim.Optimizer,
+            loss_fn: nn.modules.loss._Loss,
+            **kwargs
+    ) -> pd.DataFrame:
+        """Train the DEC model to minimize clustering loss.
+
+        Notes:
+        See `.training.train_model()` for the details of the parameters.
+        """
+        device = next(self.parameters()).device
+        history = train_model(self,
+                              train_loader,
+                              optimizer,
+                              loss_fn,
+                              **kwargs,
+                              device=device)
+        return history
 
     @staticmethod
     def soft_assignment(
