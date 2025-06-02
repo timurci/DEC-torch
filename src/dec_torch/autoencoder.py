@@ -23,7 +23,7 @@ _ACTIVATION_REGISTRY: dict[str, type[nn.Module] | None] = {
 }
 
 
-def get_activation_module(name: str) -> Optional[nn.Module]:
+def get_activation_module(name: str) -> Optional[type[nn.Module]]:
     """Get an activation function module by name.
 
     Returns:
@@ -35,7 +35,7 @@ def get_activation_module(name: str) -> Optional[nn.Module]:
     activation = _ACTIVATION_REGISTRY[name.lower()]
     if activation is None:
         return None
-    return activation()
+    return activation
 
 
 def register_activation_module(name: str, object: type[nn.Module]):

@@ -110,18 +110,20 @@ def _extract_batch_pairs(
         batch: Union[
             torch.Tensor,
             tuple[torch.Tensor],
-            tuple[torch.Tensor, torch.Tensor | Callable],
+            tuple[torch.Tensor, torch.Tensor],
             Sequence,
         ],
         device: Optional[str | torch.device] = None,
         transform: Optional[Callable] = None,
-):
+        target_function: Optional[Callable] = None,
+) -> tuple[torch.Tensor, torch.Tensor | Callable]:
     """Extract input-target pairs from a batch.
 
     Arguments:
     batch: Input tensor or a sequence of (input, target).
     device: Tensor computation device.
     transform: Transforms the input. Applied after loading input to the device.
+    target_function: Function to compute target values from outputs.
     """
     if isinstance(batch, Sequence) and len(batch) > 1:
         batch_input, batch_target = batch[0], batch[1]
@@ -137,7 +139,10 @@ def _extract_batch_pairs(
         batch_input = transform(batch_input)
 
     if batch_target is None:
-        batch_target = batch_input
+        if target_function:
+            batch_target = target_function
+        else:
+            batch_target = batch_input
 
     return batch_input, batch_target
 
@@ -153,6 +158,7 @@ def train_model(
         verbose: bool = True,
         max_verbose: int = 20,
         transform: Optional[Callable] = None,
+        target_function: Optional[Callable] = None
 ) -> pd.DataFrame:
     """Train an autoencoder module with specified hyperparameters.
 
@@ -166,19 +172,23 @@ def train_model(
     verbose: Specifies if training performance reported via logging module.
     max_verbose: Maximum (or +1) number of lines to log.
     transform: Apply transformation on the loaded batch.
+    target_function: Function to apply on output to compute target values.
 
     Returns:
     pandas.DataFrame: Training and validation loss history.
 
-    Notes:
+    Note:
     `DataLoader` is expected to return either a Tensor (just the input) to
     train an autoencoder, or a tuple consisting of input and target of type
-    `tuple[Tensor, Tensor]`. Target could also be a function (i.e `Callable`),
-    which will be used to derive the target value from the output of the model
-    by calling `target(model(input))`.
+    `tuple[Tensor, Tensor]`.
 
+    Note:
     `transform` is added to transform the input using sequential encoders
     during layer-wise training phase of a `StackedAutoEncoder`.
+
+    Note:
+    `target_function` is added to compute target_distribution from the output
+    of a `DEC` model.
     """
     phases = [("training", train_loader, _train_pass)]
 
@@ -195,15 +205,18 @@ def train_model(
             sum_sq_error = 0.
             n_samples = 0
             for batch in loader:
-                batch_input, batch_target = _extract_batch_pairs(batch,
-                                                                 device,
-                                                                 transform)
+                batch_input, batch_target = _extract_batch_pairs(
+                    batch,
+                    device,
+                    transform,
+                    target_function
+                )
                 batch_mse = phase_pass(model,
                                        batch_input,
                                        batch_target,
                                        loss_fn, optimizer)
 
-                batch_size = batch.size(0)
+                batch_size = batch_input.size(0)
                 n_samples += batch_size
                 sum_sq_error += batch_mse * batch_size
 

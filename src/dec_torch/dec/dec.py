@@ -53,7 +53,7 @@ def init_clusters(
     for batch in data_loader:
         if isinstance(batch, (list, tuple)):
             batch = batch[0]  # assuming the first element is input
-        data = torch.cat((data, batch))
+        data = torch.cat((data, batch.to("cpu")))
     data = data.to(device)
 
     encoder.eval()
@@ -114,7 +114,8 @@ class DEC(nn.Module):
                               optimizer,
                               loss_fn,
                               **kwargs,
-                              device=device)
+                              device=device,
+                              target_function=self.target_distribution)
         return history
 
     @staticmethod
