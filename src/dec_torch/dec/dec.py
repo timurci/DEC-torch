@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 import pandas as pd
 from sklearn.cluster import KMeans
 
-from training import train_model
+from dec_torch.training import train_model
 
 
 def init_clusters_random(

@@ -4,10 +4,10 @@ from torch.utils.data import DataLoader
 
 import pandas as pd
 
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import Optional
 
-from training import train_model
+from dec_torch.training import train_model
 
 import logging
 
@@ -67,10 +67,17 @@ class CoderConfig:
     """
     input_dim: int
     output_dim: int
-    hidden_dims: list[int] = []
+    hidden_dims: Optional[list[int]] = None
     input_dropout: Optional[float] = None
     hidden_activation: str = "relu"
     output_activation: str = "relu"
+
+    def to_dict(self):
+        return asdict(self)
+
+    @staticmethod
+    def from_dict(config_dict: dict) -> "CoderConfig":
+        return CoderConfig(**config_dict)
 
 
 @dataclass(frozen=True)
@@ -78,6 +85,19 @@ class AutoEncoderConfig:
     """Configuration for AutoEncoder module"""
     encoder: CoderConfig
     decoder: CoderConfig
+
+    def to_dict(self):
+        return {
+            "encoder": self.encoder.to_dict(),
+            "decoder": self.decoder.to_dict()
+        }
+
+    @staticmethod
+    def from_dict(config_dict: dict) -> "AutoEncoderConfig":
+        return AutoEncoderConfig(
+            encoder=CoderConfig.from_dict(config_dict["encoder"]),
+            decoder=CoderConfig.from_dict(config_dict["decoder"]),
+        )
 
     @staticmethod
     def build(
@@ -182,6 +202,25 @@ class Coder(nn.Module):
 
         return x
 
+    def save(self, path: str, **kwargs):
+        """Save the Coder model weights and configuration to path."""
+        torch.save({
+            "state_dict": self.state_dict(),
+            "config": self.config.to_dict(),
+            }, path, **kwargs)
+
+    @staticmethod
+    def load(path: str, **kwargs):
+        """Load an Coder model from path.
+
+        The underlying pickle file is expected to contain model configuration.
+        """
+        state = torch.load(path, **kwargs)
+        config = CoderConfig.from_dict(state["config"])
+        model = Coder(config)
+        model.load_state_dict(state["state_dict"])
+        return model
+
 
 class AutoEncoder(nn.Module):
     """Generic autoencoder model"""
@@ -234,6 +273,25 @@ class AutoEncoder(nn.Module):
                               **kwargs,
                               device=device)
         return history
+
+    def save(self, path: str, **kwargs):
+        """Save the AutoEncoder model weights and configuration to path."""
+        torch.save({
+            "state_dict": self.state_dict(),
+            "config": self.config.to_dict(),
+            }, path, **kwargs)
+
+    @staticmethod
+    def load(path: str, **kwargs):
+        """Load an AutoEncoder model from path.
+
+        The underlying pickle file is expected to contain model configuration.
+        """
+        state = torch.load(path, **kwargs)
+        config = AutoEncoderConfig.from_dict(state["config"])
+        model = AutoEncoder(config)
+        model.load_state_dict(state["state_dict"])
+        return model
 
 
 class StackedAutoEncoder(nn.Module):
