@@ -10,7 +10,9 @@ requires-python = ">=3.10"
 dependencies = [
 	"torch >= 2.6.0",
 	"pandas >= 2.2.0",
-	"scikit-learn >= 1.5.0"  # needed for k-means initialization
+	"scikit-learn >= 1.5.0",  # needed for k-means initialization
+	"seaborn >= 0.13",
+	"umap-learn >= 0.5"  # used for 2D visualization of embeddings
 ]
 
 [build-system]
