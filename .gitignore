@@ -22,3 +22,6 @@ venv
 *.JPEG
 
 .ipynb_checkpoints
+
+.envrc
+*.egg-info
