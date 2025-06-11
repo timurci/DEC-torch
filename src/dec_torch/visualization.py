@@ -35,6 +35,7 @@ def loss_plot(
                  x="epoch",
                  y="score",
                  ax=ax,
+                 hue="phase",
                  **sns_kwargs)
 
     ax.set_xlabel("Epoch")
@@ -52,7 +53,8 @@ def cluster_plot(
         reduction: Optional[Literal["umap", "tsne", "pca"]] = "umap",
         reduction_options: dict = {},
         ax: Optional[Axes] = None,
-        **sns_kwargs
+        centroids_options: dict = {},
+        **sns_kwargs,
 ) -> Axes:
     """Plot high-dimensional embeddings in a 2D scatterplot.
 
@@ -63,6 +65,7 @@ def cluster_plot(
     reduction: Specifies embedding technique to reduce input to 2D.
     reduction_options: Passed to embedding class constructor.
     ax: If provided, the plot will be populated into this subplot instead.
+    centroids_options: Additional scatterplot arguments for centroids.
     **sns_kwargs: Additional arguments for `seaborn.scatterplot()`.
     """
     reducer = None
@@ -85,7 +88,7 @@ def cluster_plot(
     if reducer:
         # Ideally the reducer should first fit data, then transform centroids.
         # However, t-SNE does not allow to use transform, hence the if/else.
-        if reduction == "tsne" and centroids:
+        if reduction == "tsne" and centroids is not None:
             combined = np.vstack([embeddings, centroids])
             combined_2D = reducer.fit_transform(combined)
             assert isinstance(combined_2D, np.ndarray)
@@ -93,7 +96,7 @@ def cluster_plot(
             centroids_2D = combined_2D[len(embeddings):]
         else:
             embeddings_2D = reducer.fit_transform(embeddings)
-            if centroids:
+            if centroids is not None:
                 centroids_2D = reducer.transform(centroids)  # pyright: ignore
 
     assert isinstance(embeddings_2D, np.ndarray)
@@ -108,16 +111,14 @@ def cluster_plot(
         **sns_kwargs
     )
 
-    if centroids_2D:
+    if centroids_2D is not None:
         assert isinstance(centroids_2D, np.ndarray)
         sns.scatterplot(
             x=centroids_2D[:, 0],
             y=centroids_2D[:, 1],
-            color="black",
-            marker="*",
             label="Centroids",
             ax=ax,
-            **sns_kwargs
+            **centroids_options
         )
 
     ax.set_xlabel("Component 1")
