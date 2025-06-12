@@ -4,6 +4,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 import pandas as pd
+import numpy as np
 from sklearn.cluster import KMeans
 
 from dec_torch.training import train_model
@@ -29,40 +30,29 @@ def init_clusters_random(
 
 
 def init_clusters(
+        embeddings: np.ndarray,
         n_clusters: int,
-        data_loader: DataLoader,
-        encoder: nn.Module,
-        device: str,
 ) -> torch.Tensor:
     """Initialize centroids via k-means algorithm using all data at once.
 
     Arguments:
+    embeddings: Embedded representation of the whole dataset.
     n_clusters: Number of clusters to initialize.
-    data_loader: DataLoader where all data is extracted at once.
-    encoder: Encoder module to get the latent representation of inputs.
-    device: Encoder-compatible tensor computation device to load the data.
 
     Returns:
-    torch.Tensor: Cluster centroids (n_cluster, latent_dim).
+    Cluster centroids (n_cluster, latent_dim).
 
-    Notes:
+    Note:
+    See `dec_torch.utils.data.extract_all_data()` to compute embeddings.
+
+    Note:
     It is possible to use a subset of the dataset to initialize
     the cluster centers using `torch.utils.data.Subset` class.
     """
-    data = torch.Tensor([])
-    for batch in data_loader:
-        if isinstance(batch, (list, tuple)):
-            batch = batch[0]  # assuming the first element is input
-        data = torch.cat((data, batch.to("cpu")))
-    data = data.to(device)
-
-    encoder.eval()
-    with torch.no_grad():
-        z = encoder(data).detach().cpu().numpy()
-        kmeans = KMeans(n_clusters)
-        kmeans.fit(z)
-        centroids = torch.Tensor(kmeans.cluster_centers_)
-        return centroids
+    kmeans = KMeans(n_clusters)
+    kmeans.fit(embeddings)
+    centroids = torch.Tensor(kmeans.cluster_centers_)
+    return centroids
 
 
 class DEC(nn.Module):
@@ -80,8 +70,9 @@ class DEC(nn.Module):
         centroids: Initial cluster centroids.
         alpha: Degrees of freedom of Student's t-distribution.
 
-        See `init_clusters()` and `init_clusters_random()` utility functions
-        to initialize centroids.
+        Note:
+        See `init_clusters()` and `init_clusters_random()` functions from
+        `dec_torch.dec.dec` module to initialize centroids.
         """
         super().__init__()
 
@@ -133,7 +124,6 @@ class DEC(nn.Module):
 
         Returns:
         torch.Tensor: Soft assignment distribution (batch_size, n_cluster).
-
         """
         z = z.unsqueeze(1)
         centroids = centroids.unsqueeze(0)

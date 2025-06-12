@@ -2,11 +2,13 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
+from dec_torch.utils.data import extract_batch_pairs
+
 import pandas as pd
 import math
 
 from typing import Optional, NamedTuple, Union
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from enum import Enum
 
 import logging
@@ -106,47 +108,6 @@ def _test_pass(
         return loss.item()
 
 
-def _extract_batch_pairs(
-        batch: Union[
-            torch.Tensor,
-            tuple[torch.Tensor],
-            tuple[torch.Tensor, torch.Tensor],
-            Sequence,
-        ],
-        device: Optional[str | torch.device] = None,
-        transform: Optional[Callable] = None,
-        target_function: Optional[Callable] = None,
-) -> tuple[torch.Tensor, torch.Tensor | Callable]:
-    """Extract input-target pairs from a batch.
-
-    Arguments:
-    batch: Input tensor or a sequence of (input, target).
-    device: Tensor computation device.
-    transform: Transforms the input. Applied after loading input to the device.
-    target_function: Function to compute target values from outputs.
-    """
-    if isinstance(batch, Sequence) and len(batch) > 1:
-        batch_input, batch_target = batch[0], batch[1]
-    else:
-        batch_input = batch[0] if isinstance(batch, Sequence) else batch
-        batch_target = None
-
-    if device:
-        batch_input = batch_input.to(device)
-        if isinstance(batch_target, torch.Tensor):
-            batch_target = batch_target.to(device)
-    if transform:
-        batch_input = transform(batch_input)
-
-    if batch_target is None:
-        if target_function:
-            batch_target = target_function
-        else:
-            batch_target = batch_input
-
-    return batch_input, batch_target
-
-
 def train_model(
         model: nn.Module,
         train_loader: DataLoader,
@@ -160,7 +121,7 @@ def train_model(
         transform: Optional[Callable] = None,
         target_function: Optional[Callable] = None
 ) -> pd.DataFrame:
-    """Train an autoencoder module with specified hyperparameters.
+    """Train an autoencoder or DEC module with specified hyperparameters.
 
     Arguments:
     model: `AutoEncoder` or `StackedAutoEncoder` module.
@@ -175,7 +136,7 @@ def train_model(
     target_function: Function to apply on output to compute target values.
 
     Returns:
-    pandas.DataFrame: Training and validation loss history.
+    Training and validation loss history.
 
     Note:
     `DataLoader` is expected to return either a Tensor (just the input) to
@@ -187,8 +148,8 @@ def train_model(
     during layer-wise training phase of a `StackedAutoEncoder`.
 
     Note:
-    `target_function` is added to compute target_distribution from the output
-    of a `DEC` model.
+    `target_function` is added to compute the target distribution (p) from soft
+    assignment (q) predictions of a DEC model.
     """
     phases = [("training", train_loader, _train_pass)]
 
@@ -205,12 +166,13 @@ def train_model(
             sum_sq_error = 0.
             n_samples = 0
             for batch in loader:
-                batch_input, batch_target = _extract_batch_pairs(
+                batch_input, batch_target = extract_batch_pairs(
                     batch,
                     device,
                     transform,
-                    target_function
                 )
+                if target_function is not None:
+                    batch_target = target_function
                 batch_mse = phase_pass(model,
                                        batch_input,
                                        batch_target,
