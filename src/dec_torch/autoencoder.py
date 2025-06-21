@@ -4,6 +4,8 @@ from torch.utils.data import DataLoader
 
 import pandas as pd
 
+from abc import abstractmethod
+
 from dataclasses import dataclass, asdict
 from typing import Optional
 
@@ -144,6 +146,21 @@ class StackedAutoEncoderConfig:
     """Configuration for StackedAutoEncoder module"""
     autoencoders: list[AutoEncoderConfig]
 
+    def to_dict(self):
+        return {
+            "autoencoders": [ae.to_dict() for ae in self.autoencoders]
+        }
+
+    @staticmethod
+    def from_dict(config_dict: dict) -> "StackedAutoEncoderConfig":
+        configs = [
+            AutoEncoderConfig.from_dict(ae) for ae
+            in config_dict["autoencoders"]
+        ]
+        return StackedAutoEncoderConfig(
+            autoencoders=configs
+        )
+
     @staticmethod
     def build(
             input_dim: int,
@@ -153,7 +170,7 @@ class StackedAutoEncoderConfig:
             hidden_activation: str = "relu",
             trailing_activation: str = "linear"
     ) -> "StackedAutoEncoderConfig":
-        """Initialize an SAE configuration with higher-level options
+        """Initialize an SAE configuration with higher-level options.
 
         Arguments:
         hidden_dims: Number of hidden layer units of each encoder and decoder.
@@ -162,7 +179,25 @@ class StackedAutoEncoderConfig:
         latent_dims: Specifies latent dimension of each subsequent autoencoder.
         trailing_activation: Activation of the first encoder and last decoder.
         """
-        raise NotImplementedError()
+        autoencoders = []
+        prev_dim = input_dim
+
+        for i, latent_dim in enumerate(latent_dims):
+            # Use trailing_activation for first encoder and last decoder.
+            output_act = trailing_activation if i == 0 else hidden_activation
+            ae_config = AutoEncoderConfig.build(
+                input_dim=prev_dim,
+                latent_dim=latent_dim,
+                hidden_dims=hidden_dims,
+                input_dropout=input_dropout,
+                hidden_activation=hidden_activation,
+                encoder_output_activation=output_act,
+                decoder_output_activation=output_act
+            )
+            autoencoders.append(ae_config)
+            prev_dim = latent_dim
+
+        return StackedAutoEncoderConfig(autoencoders=autoencoders)
 
 
 class Coder(nn.Module):
@@ -222,7 +257,19 @@ class Coder(nn.Module):
         return model
 
 
-class AutoEncoder(nn.Module):
+class BaseAutoEncoder:
+    @abstractmethod
+    @property
+    def encoder(self):
+        pass
+
+    @abstractmethod
+    @property
+    def decoder(self):
+        pass
+
+
+class AutoEncoder(nn.Module, BaseAutoEncoder):
     """Generic autoencoder model"""
     def __init__(
             self,
@@ -239,8 +286,8 @@ class AutoEncoder(nn.Module):
         """
         super().__init__()
 
-        self.encoder = encoder or Coder(config.encoder)
-        self.decoder = decoder or Coder(config.decoder)
+        self._encoder = encoder or Coder(config.encoder)
+        self._decoder = decoder or Coder(config.decoder)
 
         self.config = AutoEncoderConfig(
             encoder=self.encoder.config,
@@ -252,6 +299,14 @@ class AutoEncoder(nn.Module):
         x = self.decoder(x)
 
         return x
+
+    @property
+    def encoder(self):
+        return self._encoder
+
+    @property
+    def decoder(self):
+        return self._decoder
 
     def fit(
             self,
@@ -294,7 +349,7 @@ class AutoEncoder(nn.Module):
         return model
 
 
-class StackedAutoEncoder(nn.Module):
+class StackedAutoEncoder(nn.Module, BaseAutoEncoder):
     """Generic stacked autoencoder (SAE) model"""
     def __init__(
             self,
@@ -309,6 +364,20 @@ class StackedAutoEncoder(nn.Module):
 
         self.encoders = nn.ModuleList(encoders)
         self.decoders = nn.ModuleList(reversed(decoders))
+
+    def forward(self, x):
+        x = self.encoders(x)
+        x = self.decoders(x)
+
+        return x
+
+    @property
+    def encoder(self):
+        return nn.Sequential(*self.encoders)
+
+    @property
+    def decoder(self):
+        return nn.Sequential(*self.decoders)
 
     def greedy_fit(
             self,
@@ -383,3 +452,22 @@ class StackedAutoEncoder(nn.Module):
                               **kwargs,
                               device=device)
         return history
+
+    def save(self, path: str, **kwargs):
+        """Save the SAE model weights and configuration to path."""
+        torch.save({
+            "state_dict": self.state_dict(),
+            "config": self.config.to_dict(),
+            }, path, **kwargs)
+
+    @staticmethod
+    def load(path: str, **kwargs):
+        """Load an SAE model from path.
+
+        The underlying pickle file is expected to contain model configuration.
+        """
+        state = torch.load(path, **kwargs)
+        config = StackedAutoEncoderConfig.from_dict(state["config"])
+        model = StackedAutoEncoder(config)
+        model.load_state_dict(state["state_dict"])
+        return model
