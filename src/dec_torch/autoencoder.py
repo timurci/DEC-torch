@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader
 
 import pandas as pd
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 
 from dataclasses import dataclass, asdict
 from typing import Optional
@@ -105,7 +105,7 @@ class AutoEncoderConfig:
     def build(
             input_dim: int,
             latent_dim: int,
-            hidden_dims: list[int] = [],
+            hidden_dims: Optional[list[int]] = None,
             input_dropout: Optional[float] = None,
             hidden_activation: str = "relu",
             encoder_output_activation: str = "relu",
@@ -165,10 +165,11 @@ class StackedAutoEncoderConfig:
     def build(
             input_dim: int,
             latent_dims: list[int],
-            hidden_dims: list[int],
+            hidden_dims: Optional[list[int]] = None,
             input_dropout: Optional[float] = None,
             hidden_activation: str = "relu",
-            trailing_activation: str = "linear"
+            last_encoder_activation: str = "linear",
+            last_decoder_activation: str = "linear"
     ) -> "StackedAutoEncoderConfig":
         """Initialize an SAE configuration with higher-level options.
 
@@ -177,22 +178,36 @@ class StackedAutoEncoderConfig:
         input_dropout: Input dropout probability for each encoder and decoder.
         hidden_activation: Specifies activation function of each hidden layer.
         latent_dims: Specifies latent dimension of each subsequent autoencoder.
-        trailing_activation: Activation of the first encoder and last decoder.
+        last_encoder_activation: Activation of the last encoder (in last AE).
+        last_decoder_activation: Activation of the last decoder (in first AE).
+
+        Note:
+        Last encoder and last decoder activations are expected to be non-ReLU
+        to retain full information in final embedded space and recover negative
+        values during reconstruction.
         """
         autoencoders = []
         prev_dim = input_dim
 
+        def encoder_output_activation(layer_index):
+            if layer_index == len(latent_dims) - 1:
+                return last_encoder_activation
+            return hidden_activation
+
+        def decoder_output_activation(layer_index):
+            if layer_index == 0:
+                return last_decoder_activation
+            return hidden_activation
+
         for i, latent_dim in enumerate(latent_dims):
-            # Use trailing_activation for first encoder and last decoder.
-            output_act = trailing_activation if i == 0 else hidden_activation
             ae_config = AutoEncoderConfig.build(
                 input_dim=prev_dim,
                 latent_dim=latent_dim,
                 hidden_dims=hidden_dims,
                 input_dropout=input_dropout,
                 hidden_activation=hidden_activation,
-                encoder_output_activation=output_act,
-                decoder_output_activation=output_act
+                encoder_output_activation=encoder_output_activation(i),
+                decoder_output_activation=decoder_output_activation(i)
             )
             autoencoders.append(ae_config)
             prev_dim = latent_dim
@@ -217,15 +232,17 @@ class Coder(nn.Module):
         previous_dim = config.input_dim
         hidden_layers = []
 
-        for layer_dim in config.hidden_dims:
-            hidden_layers.append(nn.Linear(previous_dim, layer_dim))
-            if hidden_activation:
-                hidden_layers.append(hidden_activation())
+        if config.hidden_dims is not None:
+            for layer_dim in config.hidden_dims:
+                hidden_layers.append(nn.Linear(previous_dim, layer_dim))
+                if hidden_activation:
+                    hidden_layers.append(hidden_activation())
 
-            previous_dim = layer_dim
+                previous_dim = layer_dim
 
-        output_layer = [nn.Linear(previous_dim, config.output_dim)]
-        if output_activation:
+        output_layer = []
+        output_layer.append(nn.Linear(previous_dim, config.output_dim))
+        if output_activation is not None:
             output_layer.append(output_activation())
 
         self.hidden = nn.Sequential(*hidden_layers)
@@ -257,15 +274,15 @@ class Coder(nn.Module):
         return model
 
 
-class BaseAutoEncoder:
-    @abstractmethod
+class BaseAutoEncoder(ABC):
     @property
-    def encoder(self):
+    @abstractmethod
+    def encoder(self) -> nn.Module:
         pass
 
-    @abstractmethod
     @property
-    def decoder(self):
+    @abstractmethod
+    def decoder(self) -> nn.Module:
         pass
 
 
@@ -290,22 +307,22 @@ class AutoEncoder(nn.Module, BaseAutoEncoder):
         self._decoder = decoder or Coder(config.decoder)
 
         self.config = AutoEncoderConfig(
-            encoder=self.encoder.config,
-            decoder=self.decoder.config
+            encoder=self._encoder.config,
+            decoder=self._decoder.config
         )
 
     def forward(self, x):
-        x = self.encoder(x)
-        x = self.decoder(x)
+        x = self._encoder(x)
+        x = self._decoder(x)
 
         return x
 
     @property
-    def encoder(self):
+    def encoder(self) -> nn.Module:
         return self._encoder
 
     @property
-    def decoder(self):
+    def decoder(self) -> nn.Module:
         return self._decoder
 
     def fit(
@@ -372,11 +389,11 @@ class StackedAutoEncoder(nn.Module, BaseAutoEncoder):
         return x
 
     @property
-    def encoder(self):
+    def encoder(self) -> nn.Module:
         return nn.Sequential(*self.encoders)
 
     @property
-    def decoder(self):
+    def decoder(self) -> nn.Module:
         return nn.Sequential(*self.decoders)
 
     def greedy_fit(
@@ -411,7 +428,7 @@ class StackedAutoEncoder(nn.Module, BaseAutoEncoder):
 
         coder_pairs = zip(self.encoders, reversed(self.decoders))
         trained_encoders = []
-        history_encoders = []
+        history_autoencoders = []
 
         for i, (encoder, decoder) in enumerate(coder_pairs):
             logger.info("Training autoencoder " + str(i))
@@ -424,13 +441,12 @@ class StackedAutoEncoder(nn.Module, BaseAutoEncoder):
                                       optimizer,
                                       loss_fn,
                                       **kwargs,
-                                      device=device,
                                       transform=transform_fn(trained_encoders,
                                                              device=device))
             trained_encoders.append(encoder)
-            history_encoders.append(history)
+            history_autoencoders.append(history)
 
-        raise NotImplementedError()
+        return history_autoencoders
 
     def fit(
             self,
