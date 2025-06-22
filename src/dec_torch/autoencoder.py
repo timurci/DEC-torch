@@ -6,7 +6,7 @@ import pandas as pd
 
 from abc import ABC, abstractmethod
 
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, replace
 from typing import Optional
 
 from dec_torch.training import train_model
@@ -214,6 +214,21 @@ class StackedAutoEncoderConfig:
 
         return StackedAutoEncoderConfig(autoencoders=autoencoders)
 
+    def replace_input_dropout(
+            self,
+            new_dropout: Optional[float]
+    ) -> "StackedAutoEncoderConfig":
+        """Create a new instance by replacing all input_dropouts."""
+        new_autoencoders = [
+            replace(
+                ae,
+                encoder=replace(ae.encoder, input_dropout=new_dropout),
+                decoder=replace(ae.decoder, input_dropout=new_dropout),
+            )
+            for ae in self.autoencoders
+        ]
+        return replace(self, autoencoders=new_autoencoders)
+
 
 class Coder(nn.Module):
     """Generic template model that functions as an encoder or decoder."""
@@ -383,8 +398,10 @@ class StackedAutoEncoder(nn.Module, BaseAutoEncoder):
         self.decoders = nn.ModuleList(reversed(decoders))
 
     def forward(self, x):
-        x = self.encoders(x)
-        x = self.decoders(x)
+        for encoder in self.encoders:
+            x = encoder(x)
+        for decoder in self.decoders:
+            x = decoder(x)
 
         return x
 
