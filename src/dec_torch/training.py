@@ -306,18 +306,17 @@ def train_dec_model(
             for metric, score in scores.items():
                 tracker.add_record(epoch_i + 1, phase, metric, score)
 
-        if previous_labels is None:
-            previous_labels = current_labels
-        else:
+        if previous_labels is not None:
             reassignments = sum(previous_labels != current_labels)
             reassignment_fraction = reassignments / len(previous_labels)
+        previous_labels = current_labels
 
         if epoch_i in verbose_steps or reassignment_fraction < tolerance:
             train_loss = tracker.get_record(epoch_i + 1, "training", "loss")
             val_loss = tracker.get_record(epoch_i + 1, "validation", "loss")
             msg = (f"[Epoch: {epoch_i + 1:4d}] | "
                    f"Train. loss: {train_loss:.4f} | "
-                   f"Reassignment: {reassignment_fraction:6.2%} | "
+                   f"Reassignment: {reassignment_fraction:7.2%} | "
                    f"Val. loss: {val_loss:.4f} |")
             logger.info(msg)
 
