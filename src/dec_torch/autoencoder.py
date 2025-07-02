@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict, replace
 from typing import Optional
 
-from dec_torch.training import train_model
+from dec_torch.training import train_ae_model
 
 import logging
 
@@ -350,15 +350,16 @@ class AutoEncoder(nn.Module, BaseAutoEncoder):
         """Train the AutoEncoder to minimize reconstruction loss.
 
         Notes:
-        See `.training.train_model()` for the details of the parameters.
+        See `training.train_ae_model()` for the details of the parameters.
         """
         device = next(self.parameters()).device
-        history = train_model(self,
-                              train_loader,
-                              optimizer,
-                              loss_fn,
-                              **kwargs,
-                              device=device)
+        if "device" not in kwargs:
+            kwargs["device"] = device
+        history = train_ae_model(self,
+                                 train_loader,
+                                 optimizer,
+                                 loss_fn,
+                                 **kwargs)
         return history
 
     def save(self, path: str, **kwargs):
@@ -426,9 +427,13 @@ class StackedAutoEncoder(nn.Module, BaseAutoEncoder):
         list[pandas.DataFrame]: Loss history for each autoencoder.
 
         Notes:
-        See `.training.train_model()` for the details of the parameters.
+        See `training.train_ae_model()` for the details of the parameters.
         """
         device = next(self.parameters()).device
+        if "device" not in kwargs:
+            kwargs["device"] = device
+        else:
+            device = kwargs["device"]
 
         def transform_fn(encoders: list[nn.Module], device=None):
             """Return a transform function from a list of encoders."""
@@ -475,15 +480,17 @@ class StackedAutoEncoder(nn.Module, BaseAutoEncoder):
         """Perform global loss optimization of SAE.
 
         Notes:
-        See `.training.train_model()` for the details of the parameters.
+        See `training.train_ae_model()` for the details of the parameters.
         """
         device = next(self.parameters()).device
-        history = train_model(self,
-                              train_loader,
-                              optimizer,
-                              loss_fn,
-                              **kwargs,
-                              device=device)
+        if "device" not in kwargs:
+            kwargs["device"] = device
+
+        history = train_ae_model(self,
+                                 train_loader,
+                                 optimizer,
+                                 loss_fn,
+                                 **kwargs)
         return history
 
     def save(self, path: str, **kwargs):

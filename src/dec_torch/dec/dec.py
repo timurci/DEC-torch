@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 from sklearn.cluster import KMeans
 
-from dec_torch.training import train_model
+from dec_torch.training import train_dec_model
 
 
 def init_clusters_random(
@@ -92,21 +92,29 @@ class DEC(nn.Module):
             train_loader: DataLoader,
             optimizer: torch.optim.Optimizer,
             loss_fn: nn.modules.loss._Loss,
+            tolerance: float = 0.01,
             **kwargs
     ) -> pd.DataFrame:
         """Train the DEC model to minimize clustering loss.
 
+        Arguments:
+        tolerance: Cluster reassignment percentage threshold to stop training.
+
         Notes:
-        See `.training.train_model()` for the details of the parameters.
+        See `training.train_dec_model()` for the details of the parameters.
         """
         device = next(self.parameters()).device
-        history = train_model(self,
-                              train_loader,
-                              optimizer,
-                              loss_fn,
-                              **kwargs,
-                              device=device,
-                              target_function=self.target_distribution)
+        if "device" not in kwargs:
+            kwargs["device"] = device
+        history = train_dec_model(
+            self,
+            train_loader,
+            optimizer,
+            loss_fn,
+            **kwargs,
+            tolerance=tolerance,
+            derive_loss_target_fn=self.target_distribution
+        )
         return history
 
     @staticmethod
