@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from torch.nn import functional as F
 
 from torch.utils.data import DataLoader
 
@@ -8,6 +9,23 @@ import numpy as np
 from sklearn.cluster import KMeans
 
 from dec_torch.training import train_dec_model
+
+
+class KLDivLoss(nn.Module):
+    """Custom KL Divergence Loss module.
+
+    This module uses mathematically accurate reduction by default as suggested
+    in PyTorch Docs. Additionally, the module automatically log transforms Q as
+    required by `nn.functional.kl_div` function.
+    """
+    def __init__(self, reduction="batchmean", eps=1e-10):
+        super().__init__()
+        self.reduction = reduction
+        self.eps = eps
+
+    def forward(self, q, p):
+        q = (q + self.eps).log()  # kl_div requires Q to be in log space.
+        return F.kl_div(q, p, reduction=self.reduction)
 
 
 def init_clusters_random(
