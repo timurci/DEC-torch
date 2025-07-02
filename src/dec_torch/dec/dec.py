@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 import pandas as pd
 import numpy as np
 from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score, calinski_harabasz_score
 
 from dec_torch.training import train_dec_model
 
@@ -71,6 +72,37 @@ def init_clusters(
     kmeans.fit(embeddings)
     centroids = torch.Tensor(kmeans.cluster_centers_)
     return centroids
+
+
+def init_clusters_trials(
+        embeddings: np.ndarray,
+        n_clusters: int,
+        n_trials: int = 20
+) -> tuple[list[np.ndarray], pd.DataFrame]:
+    """Run k-means initialization multiple times and return candidates."""
+    centroids_list = []
+    trials = {"SIL": [], "CH": []}
+
+    for _ in range(n_trials):
+        centroids = init_clusters(embeddings, n_clusters)
+        soft_assignments = DEC.soft_assignment(embeddings, centroids, alpha=1)
+        labels_pred = torch.argmax(soft_assignments, dim=1)
+
+        centroids_list.append(centroids)
+        trials["SIL"].append(silhouette_score(embeddings, labels_pred))
+        trials["CH"].append(calinski_harabasz_score(embeddings, labels_pred))
+
+    trials = pd.DataFrame(trials)
+    trials["run-id"] = list(range(len(centroids_list)))
+    trials = trials.set_index("run-id")
+
+    trials['SIL-rank'] = trials['SIL'].rank(method='min', ascending=False)
+    trials['CH-rank'] = trials['CH'].rank(method='min', ascending=False)
+
+    trials["combined-rank"] = trials["SIL-rank"] + trials["CH-rank"]
+    trials = trials.sort_values(by='combined-rank', ascending=True)
+
+    return centroids_list, trials
 
 
 class DEC(nn.Module):
