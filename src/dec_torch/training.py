@@ -143,8 +143,10 @@ def run_one_epoch(
             loss = metrics["loss"](batch_output,
                                    batch_target)
         else:
+            with torch.no_grad():
+                local_target = derive_loss_target_fn(batch_output)
             loss = metrics["loss"](batch_output,
-                                   derive_loss_target_fn(batch_output))
+                                   local_target)
 
         if train:
             optimizer.zero_grad()
