@@ -3,12 +3,13 @@ from collections.abc import Sequence
 
 import pandas as pd
 import numpy as np
+from numpy import typing as npt
 
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 import seaborn as sns
 
-import umap
+from umap import UMAP
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 
@@ -46,83 +47,125 @@ def loss_plot(
     return ax
 
 
+def _create_2d_embedding_model(
+    method: Literal["umap", "tsne", "pca"],
+    **model_options
+) -> UMAP | TSNE | PCA:
+    match method:
+        case "umap":
+            return UMAP(n_components=2, **model_options)
+        case "tsne":
+            return TSNE(n_components=2, **model_options)
+        case "pca":
+            return PCA(n_components=2, **model_options)
+        case _:
+            raise AssertionError("unsupported reduction method")
+
+
+def _transform_2d_embeddings(
+    model: UMAP | TSNE | PCA,
+    data: npt.NDArray,
+    centroids: Optional[npt.NDArray]
+) -> tuple[npt.NDArray, Optional[npt.NDArray]]:
+    centroids_2D = None
+
+    # Ideally the model should only train on embeddings. However,
+    # t-SNE does not allow to use transform after fitting the model.
+    if isinstance(model, TSNE) and centroids is not None:
+        combined = np.vstack([data, centroids])
+        combined_2D = model.fit_transform(combined)
+        assert isinstance(combined_2D, np.ndarray)
+        embeddings_2D = combined_2D[:len(data)]
+        centroids_2D = combined_2D[len(data):]
+    else:
+        embeddings_2D = model.fit_transform(data)
+        if centroids is not None:
+            centroids_2D = model.transform(centroids)  # pyright: ignore
+
+    return embeddings_2D, centroids_2D
+
+
 def cluster_plot(
         embeddings: np.ndarray,
-        labels: Optional[Sequence] = None,
+        labels: Optional[Sequence | dict[str, Sequence]] = None,
         centroids: Optional[np.ndarray] = None,
         reduction: Optional[Literal["umap", "tsne", "pca"]] = "umap",
         reduction_options: dict = {},
-        ax: Optional[Axes] = None,
+        ax: Optional[Axes | npt.NDArray[np.object_]] = None,
         centroids_options: dict = {},
         **sns_kwargs,
-) -> Axes:
+) -> Axes | npt.NDArray[np.object_]:
     """Plot high-dimensional embeddings in a 2D scatterplot.
 
     Arguments:
     embeddings: Embedded representation of the data. (n_sample, n_dim)
-    labels: Label of each sample in the data.
+    labels: Label set(s) for each sample in the data.
     centroids: Plot centroids on top of clusters. (n_centroid, n_dim).
     reduction: Specifies embedding technique to reduce input to 2D.
     reduction_options: Passed to embedding class constructor.
-    ax: If provided, the plot will be populated into this subplot instead.
+    ax: The plot will be populated into the provided subplot(s).
     centroids_options: Additional scatterplot arguments for centroids.
     **sns_kwargs: Additional arguments for `seaborn.scatterplot()`.
     """
-    reducer = None
+    # Standardize `labels` type to dict[str, Optional[Sequence]]
+    if isinstance(labels, dict):
+        label_map = labels
+    else:
+        label_map: dict[str, Optional[Sequence]] = {"": labels}
 
-    if reduction:
-        assert reduction in ("umap", "tsne", "pca"), "unsupported reduction"
-
-        if reduction == "umap":
-            reducer = umap.UMAP(n_components=2, **reduction_options)
-        elif reduction == "tsne":
-            reducer = TSNE(n_components=2, **reduction_options)
-        elif reduction == "pca":
-            reducer = PCA(n_components=2, **reduction_options)
-    elif embeddings.shape[1] != 2:
-        raise AssertionError("cannot plot non-2D embeddings without reduction")
-
-    embeddings_2D = embeddings
-    centroids_2D = centroids
-
-    if reducer:
-        # Ideally the reducer should first fit data, then transform centroids.
-        # However, t-SNE does not allow to use transform, hence the if/else.
-        if reduction == "tsne" and centroids is not None:
-            combined = np.vstack([embeddings, centroids])
-            combined_2D = reducer.fit_transform(combined)
-            assert isinstance(combined_2D, np.ndarray)
-            embeddings_2D = combined_2D[:len(embeddings)]
-            centroids_2D = combined_2D[len(embeddings):]
-        else:
-            embeddings_2D = reducer.fit_transform(embeddings)
-            if centroids is not None:
-                centroids_2D = reducer.transform(centroids)  # pyright: ignore
-
-    assert isinstance(embeddings_2D, np.ndarray)
+    # Set up ax iterator
     if ax is None:
-        _, ax = plt.subplots()
+        _, ax = plt.subplots(ncols=len(label_map))
+        assert(ax is not None)
 
-    sns.scatterplot(
-        x=embeddings_2D[:, 0],
-        y=embeddings_2D[:, 1],
-        hue=labels,
-        ax=ax,
-        **sns_kwargs
-    )
+    ax_itr = ax.flat if isinstance(ax, np.ndarray) else [ax]
+    assert(len(ax_itr) >= len(label_map), "there are more labels than provided subplots")
 
-    if centroids_2D is not None:
-        assert isinstance(centroids_2D, np.ndarray)
+    # Create 2D embeddings of the input matrices
+    if reduction:
+        reducer = _create_2d_embedding_model(reduction, **reduction_options)
+        embeddings_2D, centroids_2D = _transform_2d_embeddings(
+            reducer,
+            embeddings,
+            centroids
+        )
+    elif embeddings.shape[1] > 2 \
+            or (centroids is not None and centroids.shape[1] > 2):
+        raise AssertionError("cannot plot high-dimensional embeddings without 2D mapping")
+    else:
+        embeddings_2D = embeddings
+        centroids_2D = centroids
+    assert isinstance(embeddings_2D, np.ndarray)
+
+    # Plot 2D embeddings
+    for axis, (label_title, label_values) in zip(ax_itr, label_map.items()):
+        assert isinstance(axis, Axes)
+
+        # Plot all data points in subplot
         sns.scatterplot(
-            x=centroids_2D[:, 0],
-            y=centroids_2D[:, 1],
-            label="Centroids",
-            ax=ax,
-            **centroids_options
+            x=embeddings_2D[:, 0],
+            y=embeddings_2D[:, 1],
+            hue=label_values,
+            ax=axis,
+            **sns_kwargs
         )
 
-    ax.set_xlabel("Component 1")
-    ax.set_ylabel("Component 2")
-    ax.legend()
+        # Plot centroids in subplot
+        if centroids_2D is not None:
+            assert isinstance(centroids_2D, np.ndarray)
+            sns.scatterplot(
+                x=centroids_2D[:, 0],
+                y=centroids_2D[:, 1],
+                label="Centroids",
+                ax=axis,
+                **centroids_options
+            )
+
+        axis.set_xlabel("")
+        axis.set_ylabel("")
+        axis.set_title(f"{label_title} (Projection: {str(reduction).upper()})")
+
+        if label_values is not None:
+            axis.legend()
 
     return ax
