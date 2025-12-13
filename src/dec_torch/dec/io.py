@@ -1,52 +1,59 @@
-"""
-Input/Output utilities for DEC models.
+"""Input/Output utilities for DEC models.
 
-This module provides saving and loading functionality for DEC models with
-different encoder types. It supports both built-in autoencoder encoders
-(dec_torch.autoencoder.Coder) and custom encoder architectures.
+This module provides saving and loading functionality for DEC models (instances
+of the DEC class) with different encoder types. The save functions store both
+the encoder weights and cluster centroids, while the load functions reconstruct
+the complete DEC model.
 
 Supported Encoder Types:
-    1. Coder encoders: Single or sequential Coder modules from the
-       autoencoder module. Use save and load.
+    1. Coder encoders: Single or sequential Coder modules from the autoencoder
+       module. Use save() and load().
 
     2. Generic encoders: Custom PyTorch models or third-party encoders.
-       Use save_generic and load_generic.
+       Use save_generic() and load_generic().
 
 Main Functions:
-    - save: Save DEC model with Coder or sequential Coder encoder
-    - load: Load DEC model with Coder or sequential Coder encoder
-    - save_generic: Save DEC model with any encoder architecture
-    - load_generic: Load DEC model with any encoder architecture
+    - save: Save a trained DEC model (encoder + centroids)
+    - load: Load a saved DEC model (encoder + centroids)
+    - save_generic: Save a DEC model with any encoder type
+    - load_generic: Load a DEC model with any encoder type
 
-Example: Standard Coder Encoder:
+Example: Saving and loading a DEC model with Coder encoder:
     >>> from dec_torch.dec import DEC, init_clusters
     >>> from dec_torch.autoencoder import Coder, CoderConfig
     >>> from dec_torch.dec.io import save, load
     >>>
-    >>> # Create and train DEC model
+    >>> # Create and train a DEC model
     >>> encoder = Coder(CoderConfig(input_dim=784, output_dim=128))
     >>> centroids = init_clusters(embeddings.numpy(), n_clusters=10)
     >>> dec_model = DEC(encoder=encoder, centroids=centroids)
+    >>> # ... train the DEC model ...
     >>>
-    >>> # Save the model
-    >>> save(dec_model, "encoder.pth", "centroids.pth")
+    >>> # Save the trained DEC model
+    >>> save(dec_model, "encoder_weights.pth", "centroids.pth")
     >>>
-    >>> # Load the model later
-    >>> loaded_dec_model = load("encoder.pth", "centroids.pth")
+    >>> # Load the DEC model later
+    >>> loaded_dec_model = load("encoder_weights.pth", "centroids.pth")
 
-Example: Generic Encoder:
+Example: Saving and loading a DEC model with generic encoder:
     >>> from dec_torch.dec.io import save_generic, load_generic
     >>>
-    >>> # Save with custom encoder
-    >>> save_generic(dec_model, "encoder.pth", "centroids.pth")
+    >>> # Save the DEC model
+    >>> save_generic(dec_model, "encoder_weights.pth", "centroids.pth")
     >>>
-    >>> # Load with custom encoder (must provide instance)
-    >>> custom_encoder = MyCustomEncoder()  # Initialize your encoder
-    >>> loaded_dec_model = load_generic("encoder.pth", "centroids.pth", custom_encoder)
+    >>> # Load the DEC model (must provide initialized encoder)
+    >>> custom_encoder = MyCustomEncoder()  # Same architecture as saved model
+    >>> loaded_dec_model = load_generic(
+    ...     "encoder_weights.pth",
+    ...     "centroids.pth",
+    ...     custom_encoder
+    ... )
 
 Note:
-    When loading models, additional keyword arguments are passed to
-    torch.load and torch.save, such as map_location for
+    These functions specifically save and load complete DEC models (encoder
+    weights + cluster centroids), not standalone encoders, decoders, or
+    autoencoders. When loading models, additional keyword arguments are
+    passed to torch.load() and torch.save(), such as map_location for
     device mapping.
 """
 
@@ -159,20 +166,20 @@ def load(
 
 
 def save_generic(dec_model: DEC, encoder_path: str, centroids_path: str, **kwargs):
-    """Save a DEC model using any encoder model.
+    """Save a trained DEC model using any encoder architecture.
 
-    This function saves a DEC model with a custom or third-party encoder that
-    doesn't use the built-in `Coder` class. Only the encoder's state_dict
-    and the centroids are saved.
+    This function saves a trained DEC model with a custom or third-party encoder
+    that doesn't use the built-in Coder class. Only the encoder's state_dict
+    and the cluster centroids are saved (configuration is not saved).
 
     Args:
-        dec_model: DEC instance with any PyTorch encoder.
+        dec_model: Trained DEC instance with any PyTorch encoder.
         encoder_path: Path to save encoder state dictionary.
         centroids_path: Path to save cluster centroids.
-        **kwargs: Additional arguments passed to torch.save.
+        **kwargs: Additional arguments passed to torch.save().
 
     Note:
-        Unlike `dec.io.save`, this function does not save encoder configuration.
+        Unlike save(), this function does not save encoder configuration.
         When loading, you must provide an initialized encoder instance with the
         same architecture.
 
@@ -188,8 +195,9 @@ def save_generic(dec_model: DEC, encoder_path: str, centroids_path: str, **kwarg
         >>> resnet = models.resnet18(pretrained=True)
         >>> centroids = torch.randn(10, 512)  # 10 clusters, 512-dim features
         >>> dec_model = DEC(encoder=resnet, centroids=centroids)
+        >>> # ... training code ...
         >>>
-        >>> # Save for later
+        >>> # Save DEC model for later
         >>> save_generic(dec_model, "resnet_encoder.pth", "centroids.pth")
     """
     torch.save(dec_model.encoder.state_dict(), encoder_path, **kwargs)
@@ -203,23 +211,22 @@ def load_generic(
     alpha: float = 1.0,
     **kwargs,
 ) -> DEC:
-    """Load a DEC model using any encoder model.
+    """Load a saved DEC model using any encoder.
 
-    Loads a DEC model that was saved with save_generic. Requires an
+    Loads a DEC model that was saved with save_generic(). Requires an
     initialized encoder instance with the same architecture as the saved model.
 
     Args:
         encoder_path: Path to saved encoder state dictionary.
-        centroids_path: Path to saved centroids.
-        encoder_instance: Initialized encoder to load weights into.
-            Must have the same architecture as the saved encoder.
-        alpha: Degrees of freedom of Student's t-distribution.
-            Defaults to 1.0.
-        **kwargs: Additional arguments passed to torch.load.
+        centroids_path: Path to saved cluster centroids.
+        encoder_instance: Initialized encoder to load weights into. Must have the
+            same architecture as the saved encoder.
+        alpha: Degrees of freedom of Student's t-distribution. Defaults to 1.0.
+        **kwargs: Additional arguments passed to torch.load().
 
     Returns:
-        Loaded DEC model with weights restored to the encoder instance
-            and centroids loaded from file.
+        Loaded DEC model with weights restored to the encoder instance and
+        centroids loaded from file.
 
     See Also:
         save_generic: Save DEC model with custom encoder.
