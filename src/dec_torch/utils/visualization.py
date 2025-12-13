@@ -1,3 +1,42 @@
+"""
+Visualization utilities for DEC models and training.
+
+This module provides plotting functions for analyzing training history and
+visualizing cluster assignments in the latent space. It supports various
+dimensionality reduction techniques for visualizing high-dimensional embeddings.
+
+Main Functions:
+    loss_plot: Plot training/validation loss curves
+    cluster_plot: Visualize clusters in 2D projections
+
+Dimensionality Reduction Methods:
+    UMAP (default): Uniform Manifold Approximation and Projection
+    t-SNE: t-Distributed Stochastic Neighbor Embedding
+    PCA: Principal Component Analysis
+
+Example: Loss Plot:
+    >>> from dec_torch.utils.visualization import loss_plot
+    >>> import matplotlib.pyplot as plt
+    >>>
+    >>> # After training, plot history
+    >>> loss_plot(history)
+    >>> plt.show()
+
+Example: Cluster Visualization:
+    >>> from dec_torch.utils.visualization import cluster_plot
+    >>> import matplotlib.pyplot as plt
+    >>> from dec_torch.utils.data import extract_all_data
+    >>>
+    >>> # Extract embeddings and get cluster assignments
+    >>> embeddings, _ = extract_all_data(loader, transform=encoder)
+    >>> assignments = dec_model(embeddings).argmax(dim=1).numpy()
+    >>> centroids = dec_model.centroids.detach().numpy()
+    >>>
+    >>> # Plot clusters
+    >>> cluster_plot(embeddings.numpy(), labels=assignments, centroids=centroids)
+    >>> plt.show()
+"""
+
 from typing import Optional, Literal
 from collections.abc import Sequence
 
@@ -21,10 +60,32 @@ def loss_plot(
 ) -> Axes:
     """Plot training-validation loss history.
 
-    Arguments:
-    history: Output of `training.train_model()`.
-    ax: If provided, the plot will be populated into this subplot instead.
-    **sns_kwargs: Additional arguments for `searborn.lineplot()` function.
+    This function creates a line plot of training and validation loss over epochs.
+    It's designed to work directly with the history DataFrame returned by
+    training functions.
+
+    Args:
+        history: Output of dec_torch.training.train_ae_model or
+            dec_torch.training.train_dec_model.
+        ax: If provided, the plot will be drawn on this axes. If None, creates
+            a new figure.
+        **sns_kwargs: Additional arguments passed to seaborn.lineplot.
+
+    Returns:
+        The axes object containing the plot.
+
+    Example:
+        >>> from dec_torch.utils.visualization import loss_plot
+        >>> import matplotlib.pyplot as plt
+        >>>
+        >>> # After training
+        >>> loss_plot(history)
+        >>> plt.title("DEC Training Loss")
+        >>> plt.show()
+        >>>
+        >>> # Customize appearance
+        >>> loss_plot(history, palette="viridis", linewidth=2.5)
+        >>> plt.show()
     """
     if ax is None:
         _, ax = plt.subplots()
@@ -97,15 +158,77 @@ def cluster_plot(
 ) -> Axes | npt.NDArray[np.object_]:
     """Plot high-dimensional embeddings in a 2D scatterplot.
 
-    Arguments:
-    embeddings: Embedded representation of the data. (n_sample, n_dim)
-    labels: Label set(s) for each sample in the data.
-    centroids: Plot centroids on top of clusters. (n_centroid, n_dim).
-    reduction: Specifies embedding technique to reduce input to 2D.
-    reduction_options: Passed to embedding class constructor.
-    ax: The plot will be populated into the provided subplot(s).
-    centroids_options: Additional scatterplot arguments for centroids.
-    **sns_kwargs: Additional arguments for `seaborn.scatterplot()`.
+    This function visualizes clusters by reducing high-dimensional embeddings
+    to 2D using dimensionality reduction techniques (UMAP, t-SNE, or PCA).
+    It can plot cluster assignments, ground truth labels, and centroids.
+
+    Args:
+        embeddings: High-dimensional embeddings of shape (n_samples, n_dimensions).
+        labels: Cluster assignments or labels for coloring points. Can be:
+            - A single sequence/array of labels
+            - A dictionary mapping label set names to label sequences
+        centroids: Cluster centroids to plot as stars, shape (n_clusters, n_dimensions).
+        reduction: Dimensionality reduction method. Defaults to "umap".
+        reduction_options: Additional arguments passed to the reduction class constructor.
+        ax: Matplotlib axes to plot on. If None, creates new figure. For multiple
+            label sets, provide array of axes.
+        centroids_options: Additional arguments for centroid scatter plots.
+        **sns_kwargs: Additional arguments passed to seaborn.scatterplot.
+
+    Returns:
+        The matplotlib axes containing the plot(s).
+
+    Dimensionality Reduction Methods:
+        umap: Uniform Manifold Approximation and Projection. Good for preserving
+            global structure. Fast for large datasets.
+        tsne: t-Distributed Stochastic Neighbor Embedding. Excellent for visualizing
+            local structure and clusters. Computationally intensive.
+        pca: Principal Component Analysis. Linear method, very fast, good for
+            initial exploration.
+
+    Notes:
+        If embeddings are already 2-dimensional and no reduction is specified,
+        they are plotted directly. For higher dimensions, a reduction method
+        is required.
+
+        When labels is a dictionary with multiple label sets, the function
+        creates multiple subplots, one for each label set.
+
+        Centroids are plotted as star markers on top of the scatter plot.
+
+    Example:
+        >>> from dec_torch.utils.visualization import cluster_plot
+        >>> from dec_torch.utils.data import extract_all_data
+        >>>
+        >>> # Get embeddings and cluster assignments
+        >>> embeddings, _ = extract_all_data(loader, transform=encoder)
+        >>> assignments = dec_model(embeddings).argmax(dim=1).numpy()
+        >>> centroids = dec_model.centroids.detach().numpy()
+        >>>
+        >>> # Basic cluster plot
+        >>> cluster_plot(embeddings.numpy(), labels=assignments, centroids=centroids)
+        >>> plt.show()
+        >>>
+        >>> # Compare with ground truth
+        >>> cluster_plot(
+        ...     embeddings.numpy(),
+        ...     labels={'DEC': assignments, 'Ground Truth': true_labels},
+        ...     centroids=centroids,
+        ...     reduction='tsne',
+        ...     reduction_options={'perplexity': 30}
+        ... )
+        >>> plt.show()
+        >>>
+        >>> # Custom styling
+        >>> cluster_plot(
+        ...     embeddings.numpy(),
+        ...     labels=assignments,
+        ...     centroids=centroids,
+        ...     palette='Set2',
+        ...     s=50,  # point size
+        ...     centroids_options={'s': 200, 'marker': '*', 'color': 'red'}
+        ... )
+        >>> plt.show()
     """
     # Standardize `labels` type to dict[str, Optional[Sequence]]
     if isinstance(labels, dict):

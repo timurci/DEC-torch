@@ -1,33 +1,70 @@
+from collections.abc import Callable, Sequence
+from typing import Optional, Union
+
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
-from typing import Optional, Union
-from collections.abc import Callable, Sequence
-
 
 def extract_batch_pairs(
-        batch: Union[
-            torch.Tensor,
-            tuple[torch.Tensor],
-            tuple[torch.Tensor, torch.Tensor],
-            Sequence[torch.Tensor],
-        ],
-        device: Optional[str | torch.device] = None,
-        transform: Optional[Callable] = None,
+    batch: Union[
+        torch.Tensor,
+        tuple[torch.Tensor],
+        tuple[torch.Tensor, torch.Tensor],
+        Sequence[torch.Tensor],
+    ],
+    device: Optional[str | torch.device] = None,
+    transform: Optional[Callable] = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Extract input-target pairs from a batch.
 
-    Arguments:
-    batch: Input tensor or a `Sequence` of (input, target) pair.
-    device: Device to move all tensors to. Applied before transformation.
-    transform: Apply transform (e.g., embedding model) to input.
+    This utility function handles various batch formats that DataLoaders might
+    return and prepares them for model training. It supports:
+    - Single tensor batches (for autoencoder self-supervised learning)
+    - Tuple of (input, target) pairs
+    - Multi-element sequences
+
+    Optionally, it can move tensors to a specified device and apply
+    transformations (e.g., embedding models) to the input.
+
+    Args:
+        batch: Batch data from a DataLoader. Can be:
+            - A single tensor (treated as both input and target)
+            - A tuple of (input, target)
+            - A sequence with at least one tensor
+        device: Device to move all tensors to. Applied before transformation.
+        transform: Optional transform to apply to input, such as an embedding model.
 
     Returns:
-    Input-label pair or input-input pair.
+        A tuple of (inputs, targets). If the batch only contains inputs, returns
+        (inputs, inputs) for self-supervised learning scenarios.
 
-    Note:
-    If the batch has only input, target will be set to input (self-supervised).
+    Notes:
+        The batch is expected to come from a PyTorch DataLoader and may have
+        different formats depending on the dataset.
+
+        If the batch has only input (common for autoencoders), the target is
+        set to the input for self-supervised reconstruction.
+
+        When a transform is provided and is a nn.Module, it is temporarily
+        set to eval mode (WARN: side effect) and runs without gradient tracking.
+
+    Example:
+        >>> # Single tensor batch (autoencoder)
+        >>> batch = torch.randn(32, 784)
+        >>> inputs, targets = extract_batch_pairs(batch)
+        >>> print(inputs is targets)  # True for self-supervised
+        True
+        >>>
+        >>> # Tuple batch (input, target)
+        >>> batch = (torch.randn(32, 784), torch.randn(32, 10))
+        >>> inputs, targets = extract_batch_pairs(batch)
+        >>> print(inputs.shape, targets.shape)
+        torch.Size([32, 784]) torch.Size([32, 10])
+        >>>
+        >>> # With transform
+        >>> encoder = Coder(config)
+        >>> inputs, targets = extract_batch_pairs(batch, transform=encoder)
     """
     if isinstance(batch, Sequence) and len(batch) > 1:
         batch_input, batch_target = batch[0], batch[1]
@@ -58,19 +95,60 @@ def extract_batch_pairs(
 
 
 def extract_all_data(
-        data_loader: DataLoader,
-        device: Optional[str | torch.device] = None,
-        transform: Optional[Callable] = None
+    data_loader: DataLoader,
+    device: Optional[str | torch.device] = None,
+    transform: Optional[Callable] = None,
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
-    """Load all data from `DataLoader`, optionally transform inputs.
+    """Load all data from a DataLoader with optional transformations.
 
-    Arguments:
-    data_loader: Expected to load input or input-label pairs in each batch.
-    device: Device to move all tensors to. Applied before transformation.
-    transform: Apply transform (e.g., embedding model) to input.
+    This function iterates through an entire DataLoader and concatenates all
+    batches into single tensors. It's useful for computing embeddings on the
+    full dataset or for visualization purposes.
+
+    Args:
+        data_loader: DataLoader to extract all data from.
+        device: Device to move tensors to. Applied before transformation.
+        transform: Optional transform to apply to inputs, such as an encoder model.
 
     Returns:
-    Concatenated input-label pair. If no label, then returns `None` for label.
+        A tuple containing:
+            - Concatenated inputs tensor
+            - Concatenated targets tensor, or None if no targets are present
+
+    Notes:
+        This function loads the entire dataset into memory. Use with caution
+        for very large datasets.
+
+        If the DataLoader returns only inputs (no targets), the second return
+        value will be None.
+
+        When a transform is provided, it is applied to each batch's inputs
+        before concatenation.
+
+    Example:
+        >>> from torch.utils.data import DataLoader, TensorDataset
+        >>> from dec_torch.autoencoder import Coder, CoderConfig
+        >>>
+        >>> # Create dataset and loader
+        >>> data = torch.randn(1000, 784)
+        >>> dataset = TensorDataset(data)
+        >>> loader = DataLoader(dataset, batch_size=100)
+        >>>
+        >>> # Extract all raw data
+        >>> all_data, _ = extract_all_data(loader)
+        >>> print(all_data.shape)
+        torch.Size([1000, 784])
+        >>>
+        >>> # Extract embeddings
+        >>> config = CoderConfig(input_dim=784, output_dim=128)
+        >>> encoder = Coder(config)
+        >>> embeddings, _ = extract_all_data(loader, transform=encoder)
+        >>> print(embeddings.shape)
+        torch.Size([1000, 128])
+        >>>
+        >>> # Use embeddings for k-means initialization
+        >>> from dec_torch.dec import init_clusters
+        >>> centroids = init_clusters(embeddings.detach().numpy(), n_clusters=10)
     """
     inputs_list = []
     targets_list = []
