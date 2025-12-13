@@ -1,11 +1,12 @@
 [project]
 name = "dec-torch"
-version = "0.1.0"
+version = "1.0.0"
 description = "Deep Embedded Clustering in PyTorch"
 authors = [
 	{ name = "Timur Çakmakoğlu", email = "timurcakmakoglu@gmail.com" }
 ]
-license = { file="LICENSE" }
+license = "MIT"
+license-file = ["LICEN[CS]E*"]
 requires-python = ">=3.10"
 dependencies = [
 	"torch >= 2.6.0",

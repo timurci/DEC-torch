@@ -298,7 +298,7 @@ dec_model = load_generic(
 
 ## Examples
 
-### Visualizing Training Progress
+### Visualizing Training Progress & Clusters
 
 ```python
 from dec_torch.utils.visualization import loss_plot, cluster_plot
