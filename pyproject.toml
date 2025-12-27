@@ -9,17 +9,14 @@ license = "MIT"
 license-file = ["LICEN[CS]E*"]
 requires-python = ">=3.10"
 dependencies = [
-	"torch >= 2.6.0",
-	"pandas >= 2.2.0",
-	"scikit-learn >= 1.5.0",  # needed for k-means initialization
-	"seaborn >= 0.13",
-	"umap-learn >= 0.5"  # used for 2D visualization of embeddings
+	"torch>=2.9.0",
+	"pandas>=2.3.0",
+	"scikit-learn>=1.8.0",  # needed for k-means initialization
+	"seaborn>=0.13",
+	"numba>=0.63",  # umap-learn dependency to solve mysterious compatibility errors
+	"umap-learn>=0.5",  # used for 2D visualization of embeddings
 ]
 
 [build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
-
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["dec_torch*"]
+requires = ["uv_build>=0.9.17,<0.10.0"]
+build-backend = "uv_build"
