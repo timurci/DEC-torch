@@ -50,11 +50,7 @@ from sklearn.manifold import TSNE
 from umap import UMAP
 
 
-def loss_plot(
-        history: pd.DataFrame,
-        ax: Axes | None = None,
-        **sns_kwargs
-) -> Axes:
+def loss_plot(history: pd.DataFrame, ax: Axes | None = None, **sns_kwargs) -> Axes:
     """Plot training-validation loss history.
 
     This function creates a line plot of training and validation loss over epochs.
@@ -90,12 +86,9 @@ def loss_plot(
     loss_history = history[history["metric"] == "loss"]
     assert isinstance(loss_history, pd.DataFrame)
 
-    sns.lineplot(data=loss_history,
-                 x="epoch",
-                 y="score",
-                 ax=ax,
-                 hue="phase",
-                 **sns_kwargs)
+    sns.lineplot(
+        data=loss_history, x="epoch", y="score", ax=ax, hue="phase", **sns_kwargs
+    )
 
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Loss")
@@ -106,8 +99,7 @@ def loss_plot(
 
 
 def _create_2d_embedding_model(
-    method: Literal["umap", "tsne", "pca"],
-    **model_options
+    method: Literal["umap", "tsne", "pca"], **model_options
 ) -> UMAP | TSNE | PCA:
     match method:
         case "umap":
@@ -121,9 +113,7 @@ def _create_2d_embedding_model(
 
 
 def _transform_2d_embeddings(
-    model: UMAP | TSNE | PCA,
-    data: npt.NDArray,
-    centroids: npt.NDArray | None
+    model: UMAP | TSNE | PCA, data: npt.NDArray, centroids: npt.NDArray | None
 ) -> tuple[npt.NDArray, npt.NDArray | None]:
     centroids_2D = None
 
@@ -133,8 +123,8 @@ def _transform_2d_embeddings(
         combined = np.vstack([data, centroids])
         combined_2D = model.fit_transform(combined)
         assert isinstance(combined_2D, np.ndarray)
-        embeddings_2D = combined_2D[:len(data)]
-        centroids_2D = combined_2D[len(data):]
+        embeddings_2D = combined_2D[: len(data)]
+        centroids_2D = combined_2D[len(data) :]
     else:
         embeddings_2D = model.fit_transform(data)
         if centroids is not None:
@@ -144,14 +134,14 @@ def _transform_2d_embeddings(
 
 
 def cluster_plot(
-        embeddings: np.ndarray,
-        labels: Sequence | dict[str, Sequence] | None = None,
-        centroids: np.ndarray | None = None,
-        reduction: Literal["umap", "tsne", "pca"] | None = "umap",
-        reduction_options: dict = {},
-        ax: Axes | npt.NDArray[np.object_] | None = None,
-        centroids_options: dict = {},
-        **sns_kwargs,
+    embeddings: np.ndarray,
+    labels: Sequence | dict[str, Sequence] | None = None,
+    centroids: np.ndarray | None = None,
+    reduction: Literal["umap", "tsne", "pca"] | None = "umap",
+    reduction_options: dict = {},
+    ax: Axes | npt.NDArray[np.object_] | None = None,
+    centroids_options: dict = {},
+    **sns_kwargs,
 ) -> Axes | npt.NDArray[np.object_]:
     """Plot high-dimensional embeddings in a 2D scatterplot.
 
@@ -236,22 +226,24 @@ def cluster_plot(
     # Set up ax iterator
     if ax is None:
         _, ax = plt.subplots(ncols=len(label_map))
-        assert(ax is not None)
+        assert ax is not None
 
     ax_itr = ax.flat if isinstance(ax, np.ndarray) else [ax]
-    assert(len(ax_itr) >= len(label_map), "there are more labels than provided subplots")
+    assert (
+        len(ax_itr) >= len(label_map),
+        "there are more labels than provided subplots",
+    )
 
     # Create 2D embeddings of the input matrices
     if reduction:
         reducer = _create_2d_embedding_model(reduction, **reduction_options)
         embeddings_2D, centroids_2D = _transform_2d_embeddings(
-            reducer,
-            embeddings,
-            centroids
+            reducer, embeddings, centroids
         )
-    elif embeddings.shape[1] > 2 \
-            or (centroids is not None and centroids.shape[1] > 2):
-        raise AssertionError("cannot plot high-dimensional embeddings without 2D mapping")
+    elif embeddings.shape[1] > 2 or (centroids is not None and centroids.shape[1] > 2):
+        raise AssertionError(
+            "cannot plot high-dimensional embeddings without 2D mapping"
+        )
     else:
         embeddings_2D = embeddings
         centroids_2D = centroids
@@ -267,7 +259,7 @@ def cluster_plot(
             y=embeddings_2D[:, 1],
             hue=label_values,
             ax=axis,
-            **sns_kwargs
+            **sns_kwargs,
         )
 
         # Plot centroids in subplot
@@ -278,7 +270,7 @@ def cluster_plot(
                 y=centroids_2D[:, 1],
                 label="Centroids",
                 ax=axis,
-                **centroids_options
+                **centroids_options,
             )
 
         axis.set_xlabel("")

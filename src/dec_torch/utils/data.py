@@ -6,7 +6,10 @@ from torch.utils.data import DataLoader
 
 
 def extract_batch_pairs(
-    batch: torch.Tensor | tuple[torch.Tensor] | tuple[torch.Tensor, torch.Tensor] | Sequence[torch.Tensor],
+    batch: torch.Tensor
+    | tuple[torch.Tensor]
+    | tuple[torch.Tensor, torch.Tensor]
+    | Sequence[torch.Tensor],
     device: str | torch.device | None = None,
     transform: Callable | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
