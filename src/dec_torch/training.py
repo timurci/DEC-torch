@@ -3,7 +3,7 @@ import logging
 import math
 from collections.abc import Callable
 from enum import Enum
-from typing import NamedTuple, Optional
+from typing import NamedTuple
 
 import pandas as pd
 import torch
@@ -124,11 +124,11 @@ def run_one_epoch(
     metrics: dict[str, Callable],
     optimizer: torch.optim.Optimizer,  # Not used if train=False
     train: bool,
-    device: Optional[str | torch.device] = None,
-    transform: Optional[Callable] = None,
-    derive_loss_target_fn: Optional[Callable] = None,
+    device: str | torch.device | None = None,
+    transform: Callable | None = None,
+    derive_loss_target_fn: Callable | None = None,
     return_label: bool = False,
-) -> tuple[dict[str, float], Optional[torch.Tensor]]:
+) -> tuple[dict[str, float], torch.Tensor | None]:
     """Run one epoch loop of an autoencoder or DEC model.
 
     This function executes a single training or validation epoch, computing
@@ -187,7 +187,7 @@ def run_one_epoch(
         model.eval()
         context = torch.no_grad()
 
-    scores = {k: 0.0 for k in metrics}
+    scores = dict.fromkeys(metrics, 0.0)
     n_samples = 0
     label_list = [] if return_label else None
 
@@ -234,10 +234,10 @@ def train_ae_model(
     train_loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     loss_fn: nn.modules.loss._Loss,
-    val_loader: Optional[DataLoader] = None,
+    val_loader: DataLoader | None = None,
     n_epoch: int = 100,
-    transform: Optional[Callable] = None,
-    device: Optional[str | torch.device] = None,
+    transform: Callable | None = None,
+    device: str | torch.device | None = None,
     verbose: bool = True,
     max_verbose: int = 20,
 ) -> pd.DataFrame:
@@ -340,10 +340,10 @@ def train_dec_model(
     train_loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     loss_fn: nn.modules.loss._Loss,
-    val_loader: Optional[DataLoader] = None,
+    val_loader: DataLoader | None = None,
     tolerance: float = 0.01,
-    derive_loss_target_fn: Optional[Callable] = None,
-    device: Optional[str | torch.device] = None,
+    derive_loss_target_fn: Callable | None = None,
+    device: str | torch.device | None = None,
     verbose: bool = True,
     max_verbose: int = 10000,
     max_epoch: int = 10000,

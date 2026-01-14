@@ -1,7 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, replace
-from typing import Optional
 
 import pandas as pd
 import torch
@@ -21,7 +20,7 @@ _ACTIVATION_REGISTRY: dict[str, type[nn.Module] | None] = {
 }
 
 
-def get_activation_module(name: str) -> Optional[type[nn.Module]]:
+def get_activation_module(name: str) -> type[nn.Module] | None:
     """Get an activation function module by name.
 
     This function retrieves a registered activation function from the internal
@@ -111,8 +110,8 @@ class CoderConfig:
 
     input_dim: int
     output_dim: int
-    hidden_dims: Optional[list[int]] = None
-    input_dropout: Optional[float] = None
+    hidden_dims: list[int] | None = None
+    input_dropout: float | None = None
     hidden_activation: str = "relu"
     output_activation: str = "relu"
 
@@ -158,8 +157,8 @@ class AutoEncoderConfig:
     def build(
         input_dim: int,
         latent_dim: int,
-        hidden_dims: Optional[list[int]] = None,
-        input_dropout: Optional[float] = None,
+        hidden_dims: list[int] | None = None,
+        input_dropout: float | None = None,
         hidden_activation: str = "relu",
         encoder_output_activation: str = "relu",
         decoder_output_activation: str = "relu",
@@ -255,8 +254,8 @@ class StackedAutoEncoderConfig:
     def build(
         input_dim: int,
         latent_dims: list[int],
-        hidden_dims: Optional[list[int]] = None,
-        input_dropout: Optional[float] = None,
+        hidden_dims: list[int] | None = None,
+        input_dropout: float | None = None,
         hidden_activation: str = "relu",
         last_encoder_activation: str = "linear",
         last_decoder_activation: str = "linear",
@@ -331,7 +330,7 @@ class StackedAutoEncoderConfig:
         return StackedAutoEncoderConfig(autoencoders=autoencoders)
 
     def replace_input_dropout(
-        self, new_dropout: Optional[float]
+        self, new_dropout: float | None
     ) -> "StackedAutoEncoderConfig":
         """Create a new instance by replacing all input_dropouts.
 
@@ -518,13 +517,11 @@ class BaseAutoEncoder(ABC):
     @abstractmethod
     def encoder(self) -> nn.Module:
         """Get the encoder module of this autoencoder."""
-        pass
 
     @property
     @abstractmethod
     def decoder(self) -> nn.Module:
         """Get the decoder module of this autoencoder."""
-        pass
 
 
 class AutoEncoder(nn.Module, BaseAutoEncoder):
@@ -560,8 +557,8 @@ class AutoEncoder(nn.Module, BaseAutoEncoder):
     def __init__(
         self,
         config: AutoEncoderConfig,
-        encoder: Optional[Coder] = None,
-        decoder: Optional[Coder] = None,
+        encoder: Coder | None = None,
+        decoder: Coder | None = None,
     ):
         """Initialize an AE with specified configuration or existing modules.
 

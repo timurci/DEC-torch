@@ -1,5 +1,4 @@
-"""
-Visualization utilities for DEC models and training.
+"""Visualization utilities for DEC models and training.
 
 This module provides plotting functions for analyzing training history and
 visualizing cluster assignments in the latent space. It supports various
@@ -37,25 +36,23 @@ Example: Cluster Visualization:
     >>> plt.show()
 """
 
-from typing import Optional, Literal
 from collections.abc import Sequence
+from typing import Literal
 
-import pandas as pd
 import numpy as np
-from numpy import typing as npt
-
+import pandas as pd
+import seaborn as sns
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
-import seaborn as sns
-
-from umap import UMAP
-from sklearn.manifold import TSNE
+from numpy import typing as npt
 from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+from umap import UMAP
 
 
 def loss_plot(
         history: pd.DataFrame,
-        ax: Optional[Axes] = None,
+        ax: Axes | None = None,
         **sns_kwargs
 ) -> Axes:
     """Plot training-validation loss history.
@@ -126,8 +123,8 @@ def _create_2d_embedding_model(
 def _transform_2d_embeddings(
     model: UMAP | TSNE | PCA,
     data: npt.NDArray,
-    centroids: Optional[npt.NDArray]
-) -> tuple[npt.NDArray, Optional[npt.NDArray]]:
+    centroids: npt.NDArray | None
+) -> tuple[npt.NDArray, npt.NDArray | None]:
     centroids_2D = None
 
     # Ideally the model should only train on embeddings. However,
@@ -148,11 +145,11 @@ def _transform_2d_embeddings(
 
 def cluster_plot(
         embeddings: np.ndarray,
-        labels: Optional[Sequence | dict[str, Sequence]] = None,
-        centroids: Optional[np.ndarray] = None,
-        reduction: Optional[Literal["umap", "tsne", "pca"]] = "umap",
+        labels: Sequence | dict[str, Sequence] | None = None,
+        centroids: np.ndarray | None = None,
+        reduction: Literal["umap", "tsne", "pca"] | None = "umap",
         reduction_options: dict = {},
-        ax: Optional[Axes | npt.NDArray[np.object_]] = None,
+        ax: Axes | npt.NDArray[np.object_] | None = None,
         centroids_options: dict = {},
         **sns_kwargs,
 ) -> Axes | npt.NDArray[np.object_]:
@@ -234,7 +231,7 @@ def cluster_plot(
     if isinstance(labels, dict):
         label_map = labels
     else:
-        label_map: dict[str, Optional[Sequence]] = {"": labels}
+        label_map: dict[str, Sequence | None] = {"": labels}
 
     # Set up ax iterator
     if ax is None:
