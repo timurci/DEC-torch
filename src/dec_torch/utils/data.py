@@ -1,5 +1,4 @@
 from collections.abc import Callable, Sequence
-from typing import Optional, Union
 
 import torch
 from torch import nn
@@ -7,14 +6,9 @@ from torch.utils.data import DataLoader
 
 
 def extract_batch_pairs(
-    batch: Union[
-        torch.Tensor,
-        tuple[torch.Tensor],
-        tuple[torch.Tensor, torch.Tensor],
-        Sequence[torch.Tensor],
-    ],
-    device: Optional[str | torch.device] = None,
-    transform: Optional[Callable] = None,
+    batch: torch.Tensor | tuple[torch.Tensor] | tuple[torch.Tensor, torch.Tensor] | Sequence[torch.Tensor],
+    device: str | torch.device | None = None,
+    transform: Callable | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Extract input-target pairs from a batch.
 
@@ -96,8 +90,8 @@ def extract_batch_pairs(
 
 def extract_all_data(
     data_loader: DataLoader,
-    device: Optional[str | torch.device] = None,
-    transform: Optional[Callable] = None,
+    device: str | torch.device | None = None,
+    transform: Callable | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
     """Load all data from a DataLoader with optional transformations.
 
