@@ -4,7 +4,6 @@ import torch
 from sklearn.cluster import KMeans
 from sklearn.metrics import calinski_harabasz_score, silhouette_score
 from torch import nn
-from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
 from dec_torch.training import train_dec_model
@@ -33,8 +32,8 @@ class KLDivLoss(nn.Module):
 
     Example:
         >>> loss_fn = KLDivLoss(reduction="batchmean", eps=1e-10)
-        >>> q = torch.tensor([[0.1, 0.7, 0.2], [0.3, 0.3, 0.4]])  # soft assignments
-        >>> p = torch.tensor([[0.05, 0.85, 0.10], [0.4, 0.3, 0.3]])  # target distribution
+        >>> q = torch.tensor([[0.1, 0.7, 0.2], [0.3, 0.3, 0.4]])
+        >>> p = torch.tensor([[0.05, 0.85, 0.10], [0.4, 0.3, 0.3]])
         >>> loss = loss_fn(q, p)
         >>> print(loss.item())
         0.123...
@@ -44,7 +43,7 @@ class KLDivLoss(nn.Module):
         the reduction methods and the mathematical formulation.
     """
 
-    def __init__(self, reduction: str = "batchmean", eps: float = 1e-10):
+    def __init__(self, reduction: str = "batchmean", eps: float = 1e-10) -> None:
         """Initialize the KL Divergence loss function.
 
         Args:
@@ -70,7 +69,7 @@ class KLDivLoss(nn.Module):
             numerical stability before computing the divergence.
         """
         q = (q + self.eps).log()  # kl_div requires Q to be in log space.
-        return F.kl_div(q, p, reduction=self.reduction)
+        return nn.functional.kl_div(q, p, reduction=self.reduction)
 
 
 def init_clusters_random(
@@ -104,12 +103,11 @@ def init_clusters_random(
         >>> print(centroids.shape)
         torch.Size([10, 128])
     """
-    clusters = torch.normal(mean, std, size=(n_clusters, latent_dim))
-    return clusters
+    return torch.normal(mean, std, size=(n_clusters, latent_dim))
 
 
 def init_clusters(
-    embeddings: np.ndarray,
+    embeddings: np.ndarray | torch.Tensor,
     n_clusters: int,
 ) -> torch.Tensor:
     """Initialize cluster centroids via k-means algorithm on the embeddings.
@@ -142,13 +140,12 @@ def init_clusters(
     """
     kmeans = KMeans(n_clusters)
     kmeans.fit(embeddings)
-    centroids = torch.Tensor(kmeans.cluster_centers_)
-    return centroids
+    return torch.Tensor(kmeans.cluster_centers_)
 
 
 def init_clusters_trials(
-    embeddings: np.ndarray, n_clusters: int, n_trials: int = 20
-) -> tuple[list[np.ndarray], pd.DataFrame]:
+    embeddings: np.ndarray | torch.Tensor, n_clusters: int, n_trials: int = 20
+) -> tuple[list[torch.Tensor], pd.DataFrame]:
     """Run k-means initialization multiple times and return the best candidates.
 
     This method runs k-means clustering multiple times with different random
@@ -176,7 +173,10 @@ def init_clusters_trials(
         - combined-rank: Sum of both ranks (lower is better)
 
     Example:
-        >>> centroids_list, scores = init_clusters_trials(embeddings, n_clusters=10, n_trials=5)
+        >>> centroids_list, scores = init_clusters_trials(
+        ... embeddings,
+        ... n_clusters=10,
+        ... n_trials=5)
         >>> print(scores.head())
                SIL       CH  SIL-rank  CH-rank  combined-rank
         run-id
@@ -194,7 +194,9 @@ def init_clusters_trials(
 
     for _ in range(n_trials):
         centroids = init_clusters(embeddings, n_clusters)
-        soft_assignments = DEC.soft_assignment(embeddings, centroids, alpha=1)
+        soft_assignments = DEC.soft_assignment(
+            torch.as_tensor(embeddings), centroids, alpha=1
+        )
         labels_pred = torch.argmax(soft_assignments, dim=1)
 
         centroids_list.append(centroids)
@@ -277,7 +279,7 @@ class DEC(nn.Module):
         encoder: nn.Module,
         centroids: torch.Tensor,
         alpha: float = 1.0,
-    ):
+    ) -> None:
         """Initialize a DEC module.
 
         Args:
@@ -316,8 +318,7 @@ class DEC(nn.Module):
             torch.Size([64])
         """
         z = self.encoder(x)
-        q = self.soft_assignment(z, self.centroids, self.alpha)
-        return q
+        return self.soft_assignment(z, self.centroids, self.alpha)  # q value
 
     def fit(
         self,
@@ -360,7 +361,7 @@ class DEC(nn.Module):
             >>> history = dec_model.fit(train_loader, optimizer, loss_fn)
             >>>
             >>> # Train with custom tolerance
-            >>> history = dec_model.fit(train_loader, optimizer, loss_fn, tolerance=0.001)
+            >>> history = dec_model.fit(train_loader, optimizer, loss_fn)
 
         Note:
             The training DataLoader should be initialized with shuffle=False to
@@ -369,7 +370,7 @@ class DEC(nn.Module):
         device = next(self.parameters()).device
         if "device" not in kwargs:
             kwargs["device"] = device
-        history = train_dec_model(
+        return train_dec_model(
             self,
             train_loader,
             optimizer,
@@ -378,17 +379,15 @@ class DEC(nn.Module):
             tolerance=tolerance,
             derive_loss_target_fn=self.target_distribution,
         )
-        return history
 
     @staticmethod
     def soft_assignment(
         z: torch.Tensor, centroids: torch.Tensor, alpha: float
     ) -> torch.Tensor:
-        """Compute soft assignment of samples to clusters using Student's t-distribution.
+        """Compute soft assignment of samples to clusters.
 
         This method computes the probability that each data point belongs to each
-        cluster based on the Student's t-distribution kernel. The formula follows:
-        q_ij = (1 + ||z_i - μ_j||^2 / α)^(-(α+1)/2) / Σ_j'(1 + ||z_i - μ_j'||^2 / α)^(-(α+1)/2)
+        cluster based on the Student's t-distribution kernel.
 
         Args:
             z: Latent representation of shape (batch_size, latent_dim).
@@ -396,7 +395,8 @@ class DEC(nn.Module):
             alpha: Degrees of freedom of Student's t-distribution.
 
         Returns:
-            Soft assignment probabilities of shape (batch_size, n_clusters). Each row sums to 1.
+            Soft assignment probabilities of shape (batch_size, n_clusters).
+            Each row sums to 1.
 
         Example:
             >>> z = torch.randn(100, 128)  # 100 samples in 128-dim latent space

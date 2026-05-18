@@ -34,7 +34,7 @@ class HistoryTracker:
         1      1 validation    loss   0.42
     """
 
-    def __init__(self, phases: list[str], metrics: list[str]):
+    def __init__(self, phases: list[str], metrics: list[str]) -> None:
         """Initialize HistoryTracker with predetermined phases and metrics.
 
         Args:
@@ -51,7 +51,7 @@ class HistoryTracker:
 
         self._history: dict[RecordKey, float] = {}
 
-    def add_record(self, epoch: int, phase: str, metric: str, score: float):
+    def add_record(self, epoch: int, phase: str, metric: str, score: float) -> None:
         """Record a score in history log.
 
         Args:
@@ -178,7 +178,9 @@ def run_one_epoch(
         >>> scores, _ = run_one_epoch(model, loader, metrics, optimizer, train=True)
         >>> print(f"Average loss: {scores['loss']:.4f}")
     """
-    assert "loss" in metrics
+    if "loss" not in metrics:
+        msg = "loss not found in metrics"
+        raise AssertionError(msg)
 
     if train:
         model.train()
@@ -304,7 +306,7 @@ def train_ae_model(
         phases.append(("validation", val_loader, False))
     metrics = {"loss": loss_fn}
     tracker = HistoryTracker(
-        phases=[p[0] for p in phases], metrics=[k for k in metrics]
+        phases=[p[0] for p in phases], metrics=list(metrics.keys())
     )
     verbose_steps = _verbosity_steps(n_epoch, max_verbose) if verbose else ()
 
@@ -443,7 +445,7 @@ def train_dec_model(
                 train=train_mode,
                 device=device,
                 derive_loss_target_fn=derive_loss_target_fn,
-                return_label=True if phase == "training" else False,
+                return_label=(phase == "training"),
             )
 
             if labels is not None:
