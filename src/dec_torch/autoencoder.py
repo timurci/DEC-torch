@@ -146,7 +146,7 @@ class AutoEncoderConfig:
     encoder: CoderConfig
     decoder: CoderConfig
 
-    def to_dict(self) -> None:
+    def to_dict(self) -> dict:
         """Return config in dict type."""
         return {"encoder": self.encoder.to_dict(), "decoder": self.decoder.to_dict()}
 

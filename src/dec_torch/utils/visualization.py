@@ -138,9 +138,9 @@ def cluster_plot(
     labels: Sequence | dict[str, Sequence] | None = None,
     centroids: np.ndarray | None = None,
     reduction: Literal["umap", "tsne", "pca"] | None = "umap",
-    reduction_options: dict = {},
+    reduction_options: dict | None = None,
     ax: Axes | npt.NDArray[np.object_] | None = None,
-    centroids_options: dict = {},
+    centroids_options: dict | None = None,
     **sns_kwargs,
 ) -> Axes | npt.NDArray[np.object_]:
     """Plot high-dimensional embeddings in a 2D scatterplot.
@@ -217,6 +217,11 @@ def cluster_plot(
         ... )
         >>> plt.show()
     """
+    if reduction_options is None:
+        reduction_options = {}
+    if centroids_options is None:
+        centroids_options = {}
+
     # Standardize `labels` type to dict[str, Optional[Sequence]]
     if isinstance(labels, dict):
         label_map = labels
@@ -229,10 +234,9 @@ def cluster_plot(
         assert ax is not None
 
     ax_itr = ax.flat if isinstance(ax, np.ndarray) else [ax]
-    assert (
-        len(ax_itr) >= len(label_map),
-        "there are more labels than provided subplots",
-    )
+    if len(ax_itr) < len(label_map):
+        msg = "there are more labels than provided subplots"
+        raise ValueError(msg)
 
     # Create 2D embeddings of the input matrices
     if reduction:
@@ -250,7 +254,9 @@ def cluster_plot(
     assert isinstance(embeddings_2D, np.ndarray)
 
     # Plot 2D embeddings
-    for axis, (label_title, label_values) in zip(ax_itr, label_map.items()):
+    for axis, (label_title, label_values) in zip(
+        ax_itr, label_map.items(), strict=False
+    ):
         assert isinstance(axis, Axes)
 
         # Plot all data points in subplot
