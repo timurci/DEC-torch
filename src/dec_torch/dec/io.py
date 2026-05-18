@@ -65,7 +65,19 @@ from dec_torch.autoencoder import Coder, CoderConfig
 from .dec import DEC
 
 
-def save(dec_model: DEC, encoder_path: str, centroids_path: str, **kwargs):
+class NotBuiltinEncoderError(Exception):
+    """The encoder is not derived from a supported builtin type."""
+
+    def __init__(self) -> None:
+        """Construct error message."""
+        super().__init__(
+            f"Encoder type is not derived from type {Coder.__name__}. "
+            f"Either a direct {Coder.__name__} object should be provided "
+            f"or it should be wrapped inside a {nn.Sequential.__name__}."
+        )
+
+
+def save(dec_model: DEC, encoder_path: str, centroids_path: str, **kwargs) -> None:
     """Save a DEC model with a Coder or sequential Coder encoder.
 
     This function saves a DEC model where the encoder is either a single
@@ -106,7 +118,7 @@ def save(dec_model: DEC, encoder_path: str, centroids_path: str, **kwargs):
     elif isinstance(encoder, Coder):
         encoder.save(encoder_path, **kwargs)
     else:
-        raise AssertionError("encoder is not a Coder or a sequential Coder")
+        raise NotBuiltinEncoderError
 
     torch.save(dec_model.centroids.data.cpu(), centroids_path, **kwargs)
 
@@ -165,7 +177,9 @@ def load(
     return DEC(encoder=encoder_instance, centroids=centroids, alpha=alpha)
 
 
-def save_generic(dec_model: DEC, encoder_path: str, centroids_path: str, **kwargs):
+def save_generic(
+    dec_model: DEC, encoder_path: str, centroids_path: str, **kwargs
+) -> None:
     """Save a trained DEC model using any encoder architecture.
 
     This function saves a trained DEC model with a custom or third-party encoder
@@ -263,13 +277,16 @@ def load_generic(
     return DEC(encoder=encoder_instance, centroids=centroids, alpha=alpha)
 
 
-def _save_sequential_encoder(encoders: nn.Sequential, encoder_path: str, **kwargs):
+def _save_sequential_encoder(
+    encoders: nn.Sequential, encoder_path: str, **kwargs
+) -> None:
     """Save sequential Coder encoder to path."""
     configs = []
     state_dicts = []
 
     for encoder in encoders:
-        assert isinstance(encoder, Coder)
+        if not isinstance(encoder, Coder):
+            raise NotBuiltinEncoderError
         configs.append(encoder.config.to_dict())
         state_dicts.append(encoder.state_dict())
 
@@ -285,10 +302,9 @@ def _load_sequential_encoder(encoder_path: str, **kwargs) -> nn.Sequential:
     enc = torch.load(encoder_path, **kwargs)
     modules = []
 
-    for config, state_dict in zip(enc["configs"], enc["state_dicts"]):
+    for config, state_dict in zip(enc["configs"], enc["state_dicts"], strict=True):
         coder = Coder(CoderConfig.from_dict(config))
         coder.load_state_dict(state_dict)
         modules.append(coder)
 
-    sequential_encoder = nn.Sequential(*modules)
-    return sequential_encoder
+    return nn.Sequential(*modules)

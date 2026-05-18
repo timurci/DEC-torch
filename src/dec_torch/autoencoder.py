@@ -1,5 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 
 import pandas as pd
@@ -48,7 +49,7 @@ def get_activation_module(name: str) -> type[nn.Module] | None:
     return activation
 
 
-def register_activation_module(name: str, object: type[nn.Module]):
+def register_activation_module(name: str, module_type: type[nn.Module]) -> None:
     """Register a name for a custom activation function module.
 
     This allows using custom activation functions in encoder/decoder configurations
@@ -56,7 +57,7 @@ def register_activation_module(name: str, object: type[nn.Module]):
 
     Args:
         name: Name to register the activation under (stored lowercase).
-        object: The activation module class to register.
+        module_type: The activation module class to register.
 
     Example:
         >>> class CustomActivation(nn.Module):
@@ -66,7 +67,7 @@ def register_activation_module(name: str, object: type[nn.Module]):
         >>> print('swish' in list_activation_modules())
         True
     """
-    _ACTIVATION_REGISTRY[name.lower()] = object
+    _ACTIVATION_REGISTRY[name.lower()] = module_type
 
 
 def list_activation_modules() -> set[str]:
@@ -115,11 +116,13 @@ class CoderConfig:
     hidden_activation: str = "relu"
     output_activation: str = "relu"
 
-    def to_dict(self):
+    def to_dict(self) -> dict:
+        """Return attributes as dict."""
         return asdict(self)
 
     @staticmethod
     def from_dict(config_dict: dict) -> "CoderConfig":
+        """Construct config from a dict type."""
         return CoderConfig(**config_dict)
 
 
@@ -143,11 +146,13 @@ class AutoEncoderConfig:
     encoder: CoderConfig
     decoder: CoderConfig
 
-    def to_dict(self):
+    def to_dict(self) -> None:
+        """Return config in dict type."""
         return {"encoder": self.encoder.to_dict(), "decoder": self.decoder.to_dict()}
 
     @staticmethod
     def from_dict(config_dict: dict) -> "AutoEncoderConfig":
+        """Construct config from dict type."""
         return AutoEncoderConfig(
             encoder=CoderConfig.from_dict(config_dict["encoder"]),
             decoder=CoderConfig.from_dict(config_dict["decoder"]),
@@ -241,10 +246,12 @@ class StackedAutoEncoderConfig:
     autoencoders: list[AutoEncoderConfig]
 
     def to_dict(self):
+        """Return config in a dict type."""
         return {"autoencoders": [ae.to_dict() for ae in self.autoencoders]}
 
     @staticmethod
     def from_dict(config_dict: dict) -> "StackedAutoEncoderConfig":
+        """Construct config from a dict type."""
         configs = [
             AutoEncoderConfig.from_dict(ae) for ae in config_dict["autoencoders"]
         ]
@@ -299,17 +306,16 @@ class StackedAutoEncoderConfig:
             ...     last_decoder_activation='linear'
             ... )
             >>> print(len(config.autoencoders))
-            3
         """
         autoencoders = []
         prev_dim = input_dim
 
-        def encoder_output_activation(layer_index):
+        def encoder_output_activation(layer_index: int) -> str:
             if layer_index == len(latent_dims) - 1:
                 return last_encoder_activation
             return hidden_activation
 
-        def decoder_output_activation(layer_index):
+        def decoder_output_activation(layer_index: int) -> str:
             if layer_index == 0:
                 return last_decoder_activation
             return hidden_activation
@@ -397,7 +403,7 @@ class Coder(nn.Module):
         )
     """
 
-    def __init__(self, config: CoderConfig):
+    def __init__(self, config: CoderConfig) -> None:
         """Initialize a Coder with specified configuration.
 
         Args:
@@ -447,11 +453,10 @@ class Coder(nn.Module):
             torch.Size([32, 5])
         """
         x = self.hidden(x)
-        x = self.output(x)
 
-        return x
+        return self.output(x)
 
-    def save(self, path: str, **kwargs):
+    def save(self, path: str, **kwargs) -> None:
         """Save the Coder model weights and configuration to path.
 
         Saves both the model state dictionary and the configuration object,
@@ -476,7 +481,7 @@ class Coder(nn.Module):
         )
 
     @staticmethod
-    def load(path: str, **kwargs):
+    def load(path: str, **kwargs) -> "Coder":
         """Load a Coder model from path.
 
         Loads a Coder model that was saved with `Coder.save()`. The file must contain
@@ -559,7 +564,7 @@ class AutoEncoder(nn.Module, BaseAutoEncoder):
         config: AutoEncoderConfig,
         encoder: Coder | None = None,
         decoder: Coder | None = None,
-    ):
+    ) -> None:
         """Initialize an AE with specified configuration or existing modules.
 
         Args:
@@ -598,10 +603,7 @@ class AutoEncoder(nn.Module, BaseAutoEncoder):
             >>> print(z.shape)  # Latent representation
             torch.Size([32, 128])
         """
-        x = self._encoder(x)
-        x = self._decoder(x)
-
-        return x
+        return self._decoder(self._encoder(x))
 
     @property
     def encoder(self) -> nn.Module:
@@ -650,10 +652,9 @@ class AutoEncoder(nn.Module, BaseAutoEncoder):
         device = next(self.parameters()).device
         if "device" not in kwargs:
             kwargs["device"] = device
-        history = train_ae_model(self, train_loader, optimizer, loss_fn, **kwargs)
-        return history
+        return train_ae_model(self, train_loader, optimizer, loss_fn, **kwargs)
 
-    def save(self, path: str, **kwargs):
+    def save(self, path: str, **kwargs) -> None:
         """Save the AutoEncoder model weights and configuration to path.
 
         Saves both the model state dictionary and the configuration object,
@@ -681,7 +682,7 @@ class AutoEncoder(nn.Module, BaseAutoEncoder):
         )
 
     @staticmethod
-    def load(path: str, **kwargs):
+    def load(path: str, **kwargs) -> "AutoEncoder":
         """Load an AutoEncoder model from path.
 
         Loads an AutoEncoder model that was saved with `AutoEncoder.save()`.
@@ -744,7 +745,7 @@ class StackedAutoEncoder(nn.Module, BaseAutoEncoder):
     def __init__(
         self,
         config: StackedAutoEncoderConfig,
-    ):
+    ) -> None:
         """Initialize an SAE with specified configuration.
 
         Args:
@@ -823,25 +824,25 @@ class StackedAutoEncoder(nn.Module, BaseAutoEncoder):
         else:
             device = kwargs["device"]
 
-        def transform_fn(encoders: list[nn.Module], device=None):
+        def transform_fn(encoders: list[nn.Module], device=None) -> Callable:
             """Return a transform function from a list of encoders."""
             net = nn.Sequential(*encoders)
             if device:
                 net.to(device)
             net.eval()
 
-            def transform(x):
+            def transform(x: torch.Tensor) -> torch.Tensor:
                 with torch.no_grad():
                     return net(x)
 
             return transform
 
-        coder_pairs = zip(self.encoders, reversed(self.decoders))
+        coder_pairs = zip(self.encoders, reversed(self.decoders), strict=True)
         trained_encoders = []
         history_autoencoders = []
 
         for i, (encoder, decoder) in enumerate(coder_pairs):
-            logger.info("Training autoencoder " + str(i))
+            logger.info("Training autoencoder %s", i)
 
             config = AutoEncoderConfig(encoder=encoder.config, decoder=decoder.config)
             autoencoder = AutoEncoder(config, encoder, decoder)
@@ -884,24 +885,23 @@ class StackedAutoEncoder(nn.Module, BaseAutoEncoder):
             greedy_fit: For layer-wise pre-training.
 
         Example:
-            >>> sae = StackedAutoEncoder(config)
-            >>> optimizer = torch.optim.Adam(sae.parameters(), lr=0.001)
-            >>> loss_fn = torch.nn.MSELoss()
-            >>>
-            >>> # Pre-train layer-wise
-            >>> histories = sae.greedy_fit(train_loader, optimizer, loss_fn, n_epoch=50)
-            >>>
-            >>> # Fine-tune end-to-end
-            >>> fine_tune_history = sae.fit(train_loader, optimizer, loss_fn, n_epoch=50)
+            > sae = StackedAutoEncoder(config)
+            > optimizer = torch.optim.Adam(sae.parameters(), lr=0.001)
+            > loss_fn = torch.nn.MSELoss()
+            >
+            > # Pre-train layer-wise
+            > histories = sae.greedy_fit(train_loader, optimizer, loss_fn, n_epoch=50)
+            >
+            > # Fine-tune end-to-end
+            > history = sae.fit(train_loader, optimizer, loss_fn, n_epoch=50)
         """
         device = next(self.parameters()).device
         if "device" not in kwargs:
             kwargs["device"] = device
 
-        history = train_ae_model(self, train_loader, optimizer, loss_fn, **kwargs)
-        return history
+        return train_ae_model(self, train_loader, optimizer, loss_fn, **kwargs)
 
-    def save(self, path: str, **kwargs):
+    def save(self, path: str, **kwargs) -> None:
         """Save the SAE model weights and configuration to path.
 
         Args:
@@ -918,7 +918,7 @@ class StackedAutoEncoder(nn.Module, BaseAutoEncoder):
         )
 
     @staticmethod
-    def load(path: str, **kwargs):
+    def load(path: str, **kwargs) -> "StackedAutoEncoder":
         """Load an SAE model from path.
 
         Args:
