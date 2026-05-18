@@ -138,9 +138,14 @@ def init_clusters(
         >>> print(centroids.shape)
         torch.Size([10, 128])
     """
+    embeddings_array, embeddings_device, embeddings_dtype = _as_kmeans_input(
+        embeddings
+    )
     kmeans = KMeans(n_clusters)
-    kmeans.fit(embeddings)
-    return torch.Tensor(kmeans.cluster_centers_)
+    kmeans.fit(embeddings_array)
+    return torch.from_numpy(kmeans.cluster_centers_).to(
+        device=embeddings_device, dtype=embeddings_dtype
+    )
 
 
 def init_clusters_trials(
@@ -191,17 +196,23 @@ def init_clusters_trials(
     """
     centroids_list = []
     trials = {"SIL": [], "CH": []}
+    embeddings_array, embeddings_device, embeddings_dtype = _as_kmeans_input(
+        embeddings
+    )
+    embeddings_tensor = torch.as_tensor(
+        embeddings_array, device=embeddings_device, dtype=embeddings_dtype
+    )
 
     for _ in range(n_trials):
-        centroids = init_clusters(embeddings, n_clusters)
+        centroids = init_clusters(embeddings_tensor, n_clusters)
         soft_assignments = DEC.soft_assignment(
-            torch.as_tensor(embeddings), centroids, alpha=1
+            embeddings_tensor, centroids, alpha=1
         )
-        labels_pred = torch.argmax(soft_assignments, dim=1)
+        labels_pred = torch.argmax(soft_assignments, dim=1).detach().cpu().numpy()
 
         centroids_list.append(centroids)
-        trials["SIL"].append(silhouette_score(embeddings, labels_pred))
-        trials["CH"].append(calinski_harabasz_score(embeddings, labels_pred))
+        trials["SIL"].append(silhouette_score(embeddings_array, labels_pred))
+        trials["CH"].append(calinski_harabasz_score(embeddings_array, labels_pred))
 
     trials = pd.DataFrame(trials)
     trials["run-id"] = list(range(len(centroids_list)))
@@ -214,6 +225,19 @@ def init_clusters_trials(
     trials = trials.sort_values(by="combined-rank", ascending=True)
 
     return centroids_list, trials
+
+
+def _as_kmeans_input(
+    embeddings: np.ndarray | torch.Tensor,
+) -> tuple[np.ndarray, torch.device | None, torch.dtype | None]:
+    """Return sklearn-compatible embeddings and original tensor metadata."""
+    if isinstance(embeddings, torch.Tensor):
+        return (
+            embeddings.detach().cpu().numpy(),
+            embeddings.device,
+            embeddings.dtype,
+        )
+    return embeddings, None, None
 
 
 class DEC(nn.Module):

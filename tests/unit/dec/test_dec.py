@@ -31,3 +31,22 @@ def test_init_clusters_trials_accepts_tensor_embeddings() -> None:
         "CH-rank",
         "combined-rank",
     ]
+
+
+def test_init_clusters_trials_preserves_tensor_dtype() -> None:
+    """Tensor embeddings are converted for sklearn and restored for DEC use."""
+    embeddings = torch.tensor(
+        [
+            [0.0, 0.0],
+            [0.1, 0.0],
+            [0.0, 0.1],
+            [10.0, 10.0],
+            [10.1, 10.0],
+            [10.0, 10.1],
+        ],
+        dtype=torch.float64,
+    )
+
+    centroids_list, _ = init_clusters_trials(embeddings, n_clusters=2, n_trials=1)
+
+    assert centroids_list[0].dtype == torch.float64  # noqa: S101

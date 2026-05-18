@@ -8,4 +8,7 @@ wheels/
 
 # Virtual environment & setup
 .venv/
+.env
+env/
+venv/
 uv.lock

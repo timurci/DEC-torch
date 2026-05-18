@@ -326,12 +326,13 @@ def train_ae_model(
 
         if epoch_i in verbose_steps:
             train_loss = tracker.get_record(epoch_i + 1, "training", "loss")
-            val_loss = tracker.get_record(epoch_i + 1, "validation", "loss")
             msg = (
                 f"[Epoch: {epoch_i + 1:4d}] | "
                 f"Train. loss: {train_loss:.4f} | "
-                f"Val. loss: {val_loss:.4f} |"
             )
+            if val_loader is not None:
+                val_loss = tracker.get_record(epoch_i + 1, "validation", "loss")
+                msg += f"Val. loss: {val_loss:.4f} |"
             logger.info(msg)
 
     return tracker.history
@@ -461,13 +462,14 @@ def train_dec_model(
 
         if epoch_i in verbose_steps or reassignment_fraction < tolerance:
             train_loss = tracker.get_record(epoch_i + 1, "training", "loss")
-            val_loss = tracker.get_record(epoch_i + 1, "validation", "loss")
             msg = (
                 f"[Epoch: {epoch_i + 1:4d}] | "
                 f"Train. loss: {train_loss:.4f} | "
                 f"Reassignment: {reassignment_fraction:7.2%} | "
-                f"Val. loss: {val_loss:.4f} |"
             )
+            if val_loader is not None:
+                val_loss = tracker.get_record(epoch_i + 1, "validation", "loss")
+                msg += f"Val. loss: {val_loss:.4f} |"
             logger.info(msg)
 
         if reassignment_fraction < tolerance:
