@@ -36,7 +36,7 @@ def test_train_ae_model_logs_without_validation_loader() -> None:
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
     tracker = HistoryTracker()
 
-    train_ae_model(
+    ae_result = train_ae_model(
         model=model,
         train_loader=data_loader,
         optimizer=optimizer,
@@ -46,6 +46,7 @@ def test_train_ae_model_logs_without_validation_loader() -> None:
         trackers=[tracker],
     )
 
+    assert ae_result is None  # noqa: S101
     history = tracker.history
     assert history["phase"].tolist() == ["train"]  # noqa: S101
 
@@ -59,7 +60,7 @@ def test_train_dec_model_logs_without_validation_loader() -> None:
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
     tracker = HistoryTracker()
 
-    train_dec_model(
+    dec_result = train_dec_model(
         model=model,
         train_loader=data_loader,
         optimizer=optimizer,
@@ -70,5 +71,6 @@ def test_train_dec_model_logs_without_validation_loader() -> None:
         trackers=[tracker],
     )
 
+    assert dec_result is None  # noqa: S101
     history = tracker.history
     assert history["phase"].tolist() == ["train"]  # noqa: S101

@@ -233,7 +233,7 @@ class DEC(nn.Module):
         >>> optimizer = optim.SGD(dec_model.parameters(), lr=0.001)
         >>>
         >>> # Train the model
-        >>> dec_model.fit(train_loader, optimizer, loss_fn, n_epoch=100)
+        >>> dec_model.fit(train_loader, optimizer, loss_fn, max_epoch=100)
     """
 
     def __init__(
@@ -323,7 +323,7 @@ class DEC(nn.Module):
             >>> dec_model.fit(train_loader, optimizer, loss_fn)
             >>>
             >>> # Train with custom tolerance
-            >>> dec_model.fit(train_loader, optimizer, loss_fn)
+            >>> dec_model.fit(train_loader, optimizer, loss_fn, tolerance=0.001)
 
         Note:
             The training DataLoader should be initialized with shuffle=False to

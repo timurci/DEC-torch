@@ -53,11 +53,11 @@ class KLDivLoss(nn.Module):
         """Compute KL divergence between Q and P distributions.
 
         Args:
-            q (torch.Tensor): Soft assignment distribution (batch_size, n_clusters).
-            p (torch.Tensor): Target distribution (batch_size, n_clusters).
+            q: Soft assignment distribution (batch_size, n_clusters).
+            p: Target distribution (batch_size, n_clusters).
 
         Returns:
-            torch.Tensor: KL divergence loss value.
+            KL divergence loss value.
 
         Note:
             Q is automatically transformed to log space and epsilon is added for

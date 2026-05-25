@@ -11,7 +11,14 @@ if TYPE_CHECKING:
 
 
 class Phase(StrEnum):
-    """The phase of an experiment step."""
+    """The phase of an experiment step.
+
+    Example:
+        >>> print(Phase.TRAIN)
+        train
+        >>> Phase.TRAIN == "train"
+        True
+    """
 
     TRAIN = "train"
     VAL = "val"
@@ -19,7 +26,16 @@ class Phase(StrEnum):
 
 
 class MetricTracker(Protocol):
-    """An interface for logging step metrics."""
+    """An interface for logging step metrics.
+
+    Example:
+        >>> class MyTracker:
+        ...     def log_metrics(self, phase, step, metrics):
+        ...         print(f"{phase} step {step}: {metrics}")
+        >>> tracker = MyTracker()
+        >>> tracker.log_metrics("train", 1, {"loss": 0.5})
+        train step 1: {'loss': 0.5}
+    """
 
     def log_metrics(
         self, phase: str, step: int, metrics: Mapping[str, float]
@@ -30,18 +46,54 @@ class MetricTracker(Protocol):
             phase: The phase of the experiment run.
             step: The step of the experiment run.
             metrics: The metrics to log.
+
+        Example:
+            >>> class MyTracker:
+            ...     def log_metrics(self, phase, step, metrics):
+            ...         pass
+            >>> tracker = MyTracker()
+            >>> tracker.log_metrics("val", 5, {"loss": 0.32, "acc": 0.95})
         """
 
 
 class ParamTracker(Protocol):
-    """An interface for logging experiment parameters."""
+    """An interface for logging experiment parameters.
+
+    Example:
+        >>> class MyParamTracker:
+        ...     def log_params(self, params):
+        ...         print(params)
+        >>> tracker = MyParamTracker()
+        >>> tracker.log_params({"lr": 0.001, "batch_size": 32})
+        {'lr': 0.001, 'batch_size': 32}
+    """
 
     def log_params(self, params: Mapping[str, Any]) -> None:
-        """Logs the parameters of the current experiment run."""
+        """Logs the parameters of the current experiment run.
+
+        Example:
+            >>> class MyParamTracker:
+            ...     def log_params(self, params):
+            ...         pass
+            >>> tracker = MyParamTracker()
+            >>> tracker.log_params({"lr": 0.01, "epochs": 100})
+        """
 
 
 class ExperimentTracker(ParamTracker, MetricTracker, Protocol):
-    """An interface for experiment tracking."""
+    """An interface for experiment tracking.
+
+    Example:
+        >>> from typing import Any
+        >>> class MyTracker:
+        ...     def log_metrics(self, phase, step, metrics):
+        ...         pass
+        ...     def log_params(self, params):
+        ...         pass
+        >>> tracker: ExperimentTracker = MyTracker()
+        >>> tracker.log_params({"lr": 0.01})
+        >>> tracker.log_metrics("train", 1, {"loss": 0.5})
+    """
 
 
 class HistoryTracker:
@@ -111,6 +163,14 @@ class HistoryTracker:
             >>> print(df[df['metric'] == 'loss'].head())
         """
         df = pd.DataFrame(self._history)
+        for col, dtype in [
+            ("step", "int"),
+            ("phase", "category"),
+            ("metric", "category"),
+            ("score", "float"),
+        ]:
+            if col not in df.columns:
+                df[col] = pd.Series(dtype=dtype)
         if not df.empty:
             df["phase"] = df["phase"].astype("category")
             df["metric"] = df["metric"].astype("category")
