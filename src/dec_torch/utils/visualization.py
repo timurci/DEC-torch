@@ -87,7 +87,7 @@ def loss_plot(history: pd.DataFrame, ax: Axes | None = None, **sns_kwargs) -> Ax
     assert isinstance(loss_history, pd.DataFrame)
 
     sns.lineplot(
-        data=loss_history, x="epoch", y="score", ax=ax, hue="phase", **sns_kwargs
+        data=loss_history, x="step", y="score", ax=ax, hue="phase", **sns_kwargs
     )
 
     ax.set_xlabel("Epoch")
