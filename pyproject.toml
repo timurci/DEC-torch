@@ -1,6 +1,6 @@
 [project]
 name = "dec-torch"
-version = "1.0.0"
+version = "2.0.0"
 description = "Deep Embedded Clustering in PyTorch"
 authors = [
 	{ name = "Timur Çakmakoğlu", email = "timurcakmakoglu@gmail.com" }
