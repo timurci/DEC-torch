@@ -883,15 +883,15 @@ class StackedAutoEncoder(nn.Module, BaseAutoEncoder):
             greedy_fit: For layer-wise pre-training.
 
         Example:
-            > sae = StackedAutoEncoder(config)
-            > optimizer = torch.optim.Adam(sae.parameters(), lr=0.001)
-            > loss_fn = torch.nn.MSELoss()
-            >
-            > # Pre-train layer-wise
-            > sae.greedy_fit(train_loader, optimizer, loss_fn, n_epoch=50)
-            >
-            > # Fine-tune end-to-end
-            > sae.fit(train_loader, optimizer, loss_fn, n_epoch=50)
+            >>> sae = StackedAutoEncoder(config)
+            >>> optimizer = torch.optim.Adam(sae.parameters(), lr=0.001)
+            >>> loss_fn = torch.nn.MSELoss()
+            >>>
+            >>> # Pre-train layer-wise
+            >>> sae.greedy_fit(train_loader, optimizer, loss_fn, n_epoch=50)
+            >>>
+            >>> # Fine-tune end-to-end
+            >>> sae.fit(train_loader, optimizer, loss_fn, n_epoch=50)
         """
         device = next(self.parameters()).device
         if "device" not in kwargs:

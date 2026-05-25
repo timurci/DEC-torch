@@ -90,7 +90,7 @@ def loss_plot(history: pd.DataFrame, ax: Axes | None = None, **sns_kwargs) -> Ax
         data=loss_history, x="step", y="score", ax=ax, hue="phase", **sns_kwargs
     )
 
-    ax.set_xlabel("Epoch")
+    ax.set_xlabel("Step")
     ax.set_ylabel("Loss")
     ax.grid(True)
     ax.legend()

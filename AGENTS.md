@@ -22,7 +22,7 @@ DEC-torch is a modular PyTorch toolkit for Deep Embedded Clustering (DEC), an un
 
 ## Project Structure
 
-```
+```text
 src/dec_torch/
 ├── __init__.py              # Package documentation, module organization
 ├── autoencoder.py           # Autoencoder implementations and configs
