@@ -16,7 +16,9 @@ Main Features:
 Package Structure:
     - dec_torch.autoencoder: Autoencoder implementations (Basic, Stacked)
     - dec_torch.dec: Core DEC model and clustering utilities
+    - dec_torch.loss: Custom loss functions (KLDivLoss)
     - dec_torch.training: Training loops for autoencoders and DEC models
+    - dec_torch.trackers: Experiment tracking protocols and implementations
     - dec_torch.utils: Data handling and visualization utilities
 
 Examples:
@@ -38,9 +40,9 @@ Examples:
         >>> embeddings = encoder(training_data)
         >>> centroids = init_clusters(embeddings.detach().numpy(), n_clusters=10)
         >>>
-        >>> # Create and train DEC model
-        >>> dec_model = DEC(encoder=encoder, centroids=centroids)
-        >>> history = dec_model.fit(train_loader, optimizer, loss_fn)
+    >>> # Create and train DEC model
+    >>> dec_model = DEC(encoder=encoder, centroids=centroids)
+    >>> dec_model.fit(train_loader, optimizer, loss_fn)
 
 Note:
     In the original DEC study [1]_, "DEC" refers to the complete workflow combining
@@ -54,11 +56,13 @@ References:
         (arXiv:1511.06335)
 """
 
-from . import autoencoder, dec, training, utils
+from . import autoencoder, dec, loss, training, trackers, utils
 
 __all__ = [
     "autoencoder",
     "dec",
+    "loss",
     "training",
+    "trackers",
     "utils",
 ]

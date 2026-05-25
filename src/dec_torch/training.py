@@ -2,10 +2,7 @@ import contextlib
 import logging
 import math
 from collections.abc import Callable
-from enum import Enum
-from typing import NamedTuple
 
-import pandas as pd
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
@@ -13,109 +10,6 @@ from torch.utils.data import DataLoader
 from dec_torch.utils.data import extract_batch_pairs
 
 logger = logging.getLogger(__name__)
-
-
-class HistoryTracker:
-    """Performance log designed for efficient storage and access to records.
-
-    This class provides an efficient way to track and store training/validation
-    metrics during model training. It uses enums internally for fast lookup
-    and provides convenient conversion to pandas DataFrame for analysis.
-
-    Example:
-        >>> tracker = HistoryTracker(phases=['training', 'validation'],
-        ...                          metrics=['loss', 'accuracy'])
-        >>> tracker.add_record(epoch=1, phase='training', metric='loss', score=0.45)
-        >>> tracker.add_record(epoch=1, phase='validation', metric='loss', score=0.42)
-        >>> df = tracker.history
-        >>> print(df.head())
-           epoch     phase  metric  score
-        0      1  training    loss   0.45
-        1      1 validation    loss   0.42
-    """
-
-    def __init__(self, phases: list[str], metrics: list[str]) -> None:
-        """Initialize HistoryTracker with predetermined phases and metrics.
-
-        Args:
-            phases: List of model phases, e.g., 'training', 'validation'.
-            metrics: Model performance metrics, e.g., 'loss', 'accuracy'.
-        """
-        Phase = Enum("Phase", phases)
-        Metric = Enum("Metric", metrics)
-        RecordKey = NamedTuple("RecordKey", epoch=int, phase=Enum, metric=Enum)
-
-        self.Phase = Phase
-        self.Metric = Metric
-        self.RecordKey = RecordKey
-
-        self._history: dict[RecordKey, float] = {}
-
-    def add_record(self, epoch: int, phase: str, metric: str, score: float) -> None:
-        """Record a score in history log.
-
-        Args:
-            epoch: The epoch number.
-            phase: The phase name ('training' or 'validation').
-            metric: The metric name ('loss', 'accuracy', etc.).
-            score: The metric value to record.
-        """
-        self._history[
-            self.RecordKey(
-                epoch=int(epoch), phase=self.Phase[phase], metric=self.Metric[metric]
-            )
-        ] = float(score)
-
-    def get_record(self, epoch: int, phase: str, metric: str) -> float:
-        """Get a record from history log.
-
-        Args:
-            epoch: The epoch number.
-            phase: The phase name ('training' or 'validation').
-            metric: The metric name ('loss', 'accuracy', etc.).
-
-        Returns:
-            The recorded score for the specified epoch, phase, and metric.
-        """
-        return self._history[
-            self.RecordKey(
-                epoch=int(epoch), phase=self.Phase[phase], metric=self.Metric[metric]
-            )
-        ]
-
-    @property
-    def history(self) -> pd.DataFrame:
-        """Access all history at once as a DataFrame.
-
-        Converts the internal efficient storage format to a pandas DataFrame
-        for analysis and visualization. This operation involves data copying
-        and may be inefficient for very large training histories.
-
-        Returns:
-            DataFrame with columns ['epoch', 'phase', 'metric', 'score'].
-
-        Example:
-            >>> df = tracker.history
-            >>> print(df[df['metric'] == 'loss'].head())
-        """
-        rows = [
-            {
-                "epoch": key.epoch,
-                "phase": key.phase.name,
-                "metric": key.metric.name,
-                "score": value,
-            }
-            for key, value in self._history.items()
-        ]
-
-        df = pd.DataFrame(rows)
-        df["phase"] = df["phase"].astype("category")
-        df["metric"] = df["metric"].astype("category")
-        return df.sort_values(by=["epoch", "phase", "metric"])
-
-    def __str__(self) -> str:
-        """String representation of the history tracker."""
-        return str(self.history)
 
 
 def run_one_epoch(
@@ -242,7 +136,9 @@ def train_ae_model(
     device: str | torch.device | None = None,
     verbose: bool = True,
     max_verbose: int = 20,
-) -> pd.DataFrame:
+    trackers: list | None = None,
+    phase_prefix: str | None = None,
+) -> None:
     """Train an autoencoder with specified hyperparameters.
 
     This function provides a complete training loop for autoencoders (both
@@ -265,10 +161,11 @@ def train_ae_model(
             Defaults to True.
         max_verbose: Maximum (or +1) number of status lines to log.
             Defaults to 20.
-
-    Returns:
-        Training and validation loss history as a DataFrame
-            with columns ['epoch', 'phase', 'metric', 'score'].
+        trackers: List of experiment trackers to log metrics to.
+            If None, no tracking is performed. Defaults to None.
+        phase_prefix: Optional prefix to prepend to phase names when logging.
+            For example, "layer_0" produces phases "layer_0_train" and
+            "layer_0_val". Defaults to None.
 
     Notes:
         The DataLoader is expected to return either:
@@ -281,6 +178,7 @@ def train_ae_model(
 
     Example:
         >>> from dec_torch.autoencoder import AutoEncoder, AutoEncoderConfig
+        >>> from dec_torch.trackers import HistoryTracker
         >>> from torch.utils.data import DataLoader, TensorDataset
         >>> from torch import optim, nn
         >>>
@@ -295,22 +193,34 @@ def train_ae_model(
         >>> loss_fn = nn.MSELoss()
         >>>
         >>> # Train model
-        >>> history = train_ae_model(
+        >>> tracker = HistoryTracker()
+        >>> train_ae_model(
         ...     model, train_loader, optimizer, loss_fn,
-        ...     n_epoch=50, verbose=True
+        ...     n_epoch=50, verbose=True, trackers=[tracker]
         ... )
-        >>> print(f"Final training loss: {history.iloc[-1]['score']:.4f}")
+        >>> print(f"Final training loss: {tracker.history.iloc[-1]['score']:.4f}")
     """
-    phases = [("training", train_loader, True)]
+    from dec_torch.trackers import Phase
+
+    phases = [(Phase.TRAIN, train_loader, True)]
     if val_loader is not None:
-        phases.append(("validation", val_loader, False))
+        phases.append((Phase.VAL, val_loader, False))
     metrics = {"loss": loss_fn}
-    tracker = HistoryTracker(
-        phases=[p[0] for p in phases], metrics=list(metrics.keys())
-    )
+
+    experiment_trackers = trackers or []
+    if experiment_trackers:
+        for tracker in experiment_trackers:
+            tracker.log_params(
+                {
+                    "n_epoch": n_epoch,
+                    "has_validation": val_loader is not None,
+                }
+            )
+
     verbose_steps = _verbosity_steps(n_epoch, max_verbose) if verbose else ()
 
     for epoch_i in range(n_epoch):
+        epoch_train_scores: dict[str, float] = {}
         for phase, loader, train_mode in phases:
             scores, _ = run_one_epoch(
                 model,
@@ -321,21 +231,28 @@ def train_ae_model(
                 device=device,
                 transform=transform,
             )
-            for metric, score in scores.items():
-                tracker.add_record(epoch_i + 1, phase, metric, score)
+            if experiment_trackers:
+                log_phase = (
+                    f"{phase_prefix}_{phase}"
+                    if phase_prefix is not None
+                    else str(phase)
+                )
+                for tracker in experiment_trackers:
+                    tracker.log_metrics(
+                        phase=log_phase, step=epoch_i + 1, metrics=scores
+                    )
+
+            if phase == Phase.TRAIN:
+                epoch_train_scores = scores
 
         if epoch_i in verbose_steps:
-            train_loss = tracker.get_record(epoch_i + 1, "training", "loss")
             msg = (
                 f"[Epoch: {epoch_i + 1:4d}] | "
-                f"Train. loss: {train_loss:.4f} | "
+                f"Train. loss: {epoch_train_scores['loss']:.4f} | "
             )
             if val_loader is not None:
-                val_loss = tracker.get_record(epoch_i + 1, "validation", "loss")
-                msg += f"Val. loss: {val_loss:.4f} |"
+                msg += f"Val. loss: {scores['loss']:.4f} |"
             logger.info(msg)
-
-    return tracker.history
 
 
 def train_dec_model(
@@ -350,7 +267,9 @@ def train_dec_model(
     verbose: bool = True,
     max_verbose: int = 10000,
     max_epoch: int = 10000,
-) -> pd.DataFrame:
+    trackers: list | None = None,
+    phase_prefix: str | None = None,
+) -> None:
     """Train a DEC model with specified hyperparameters.
 
     This function implements the complete DEC training loop with automatic
@@ -376,9 +295,11 @@ def train_dec_model(
         max_verbose: Maximum number of status lines to log. Defaults to 10000.
         max_epoch: Maximum number of epochs before forced stopping.
             Defaults to 10000.
-
-    Returns:
-        Training and validation loss history as a DataFrame.
+        trackers: List of experiment trackers to log metrics to.
+            If None, no tracking is performed. Defaults to None.
+        phase_prefix: Optional prefix to prepend to phase names when logging.
+            For example, "layer_0" produces phases "layer_0_train" and
+            "layer_0_val". Defaults to None.
 
     Training Process:
         1. For each epoch, compute soft assignments for all training samples
@@ -399,7 +320,9 @@ def train_dec_model(
         for standard DEC training.
 
     Example:
-        >>> from dec_torch.dec import DEC, KLDivLoss
+        >>> from dec_torch.dec import DEC
+        >>> from dec_torch.loss import KLDivLoss
+        >>> from dec_torch.trackers import HistoryTracker
         >>> from torch import optim
         >>>
         >>> # Setup
@@ -408,35 +331,51 @@ def train_dec_model(
         >>> optimizer = optim.SGD(dec_model.parameters(), lr=0.001, momentum=0.9)
         >>>
         >>> # Train with default tolerance (1%)
-        >>> history = train_dec_model(
+        >>> tracker = HistoryTracker()
+        >>> train_dec_model(
         ...     dec_model, train_loader, optimizer, loss_fn,
         ...     derive_loss_target_fn=DEC.target_distribution,
-        ...     verbose=True
+        ...     verbose=True, trackers=[tracker]
         ... )
         >>>
         >>> # Train with stricter tolerance
-        >>> history = train_dec_model(
+        >>> tracker = HistoryTracker()
+        >>> train_dec_model(
         ...     dec_model, train_loader, optimizer, loss_fn,
-        ...     tolerance=0.001,  # Stop when < 0.01%% reassignments
+        ...     tolerance=0.001,
         ...     derive_loss_target_fn=DEC.target_distribution,
-        ...     verbose=True
+        ...     verbose=True, trackers=[tracker]
         ... )
 
     Note:
         Training automatically stops when the cluster assignments stabilize,
         indicating convergence. The final reassignment fraction is logged.
     """
-    phases = [("training", train_loader, True)]
+    from dec_torch.trackers import Phase
+
+    phases = [(Phase.TRAIN, train_loader, True)]
     if val_loader is not None:
-        phases.append(("validation", val_loader, False))
+        phases.append((Phase.VAL, val_loader, False))
     metrics = {"loss": loss_fn}
-    tracker = HistoryTracker(phases=[p[0] for p in phases], metrics=["loss"])
+
+    experiment_trackers = trackers or []
+    if experiment_trackers:
+        for tracker in experiment_trackers:
+            tracker.log_params(
+                {
+                    "max_epoch": max_epoch,
+                    "tolerance": tolerance,
+                    "has_validation": val_loader is not None,
+                }
+            )
+
     verbose_steps = _verbosity_steps(max_epoch, max_verbose) if verbose else ()
     previous_labels = None
     current_labels = None
     reassignment_fraction = 1.0
 
     for epoch_i in range(max_epoch):
+        epoch_train_scores: dict[str, float] = {}
         for phase, loader, train_mode in phases:
             scores, labels = run_one_epoch(
                 model,
@@ -446,14 +385,25 @@ def train_dec_model(
                 train=train_mode,
                 device=device,
                 derive_loss_target_fn=derive_loss_target_fn,
-                return_label=(phase == "training"),
+                return_label=(phase == Phase.TRAIN),
             )
 
             if labels is not None:
                 current_labels = labels
 
-            for metric, score in scores.items():
-                tracker.add_record(epoch_i + 1, phase, metric, score)
+            if experiment_trackers:
+                log_phase = (
+                    f"{phase_prefix}_{phase}"
+                    if phase_prefix is not None
+                    else str(phase)
+                )
+                for tracker in experiment_trackers:
+                    tracker.log_metrics(
+                        phase=log_phase, step=epoch_i + 1, metrics=scores
+                    )
+
+            if phase == Phase.TRAIN:
+                epoch_train_scores = scores
 
         if previous_labels is not None:
             reassignments = sum(previous_labels != current_labels)
@@ -461,21 +411,17 @@ def train_dec_model(
         previous_labels = current_labels
 
         if epoch_i in verbose_steps or reassignment_fraction < tolerance:
-            train_loss = tracker.get_record(epoch_i + 1, "training", "loss")
             msg = (
                 f"[Epoch: {epoch_i + 1:4d}] | "
-                f"Train. loss: {train_loss:.4f} | "
+                f"Train. loss: {epoch_train_scores['loss']:.4f} | "
                 f"Reassignment: {reassignment_fraction:7.2%} | "
             )
             if val_loader is not None:
-                val_loss = tracker.get_record(epoch_i + 1, "validation", "loss")
-                msg += f"Val. loss: {val_loss:.4f} |"
+                msg += f"Val. loss: {scores['loss']:.4f} |"
             logger.info(msg)
 
         if reassignment_fraction < tolerance:
             break
-
-    return tracker.history
 
 
 def _verbosity_steps(n_epoch: int, max_verbose: int) -> set[int]:
