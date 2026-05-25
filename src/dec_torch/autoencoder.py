@@ -3,12 +3,12 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 
-import pandas as pd
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
 from dec_torch.training import train_ae_model
+from dec_torch.trackers import ExperimentTracker
 
 logger = logging.getLogger(__name__)
 
@@ -620,8 +620,9 @@ class AutoEncoder(nn.Module, BaseAutoEncoder):
         train_loader: DataLoader,
         optimizer: torch.optim.Optimizer,
         loss_fn: nn.modules.loss._Loss,
+        trackers: list[ExperimentTracker] | None = None,
         **kwargs,
-    ) -> pd.DataFrame:
+    ) -> None:
         """Train the AutoEncoder to minimize reconstruction loss.
 
         This method provides a convenient training loop for the autoencoder.
@@ -631,10 +632,9 @@ class AutoEncoder(nn.Module, BaseAutoEncoder):
             train_loader: DataLoader for training data.
             optimizer: Optimizer for model parameters.
             loss_fn: Loss function (typically MSELoss).
+            trackers: List of experiment trackers to log metrics to.
+                If None, no tracking is performed. Defaults to None.
             **kwargs: Additional arguments passed to train_ae_model().
-
-        Returns:
-            Training and validation history with loss values.
 
         See Also:
             dec_torch.training.train_ae_model: Detailed parameter documentation.
@@ -646,13 +646,14 @@ class AutoEncoder(nn.Module, BaseAutoEncoder):
             >>> loader = DataLoader(dataset, batch_size=32)
             >>> optimizer = optim.Adam(ae.parameters(), lr=0.001)
             >>> loss_fn = nn.MSELoss()
-            >>> history = ae.fit(loader, optimizer, loss_fn, n_epoch=50)
-            >>> print(history.head())
+            >>> ae.fit(loader, optimizer, loss_fn, n_epoch=50)
         """
         device = next(self.parameters()).device
         if "device" not in kwargs:
             kwargs["device"] = device
-        return train_ae_model(self, train_loader, optimizer, loss_fn, **kwargs)
+        train_ae_model(
+            self, train_loader, optimizer, loss_fn, trackers=trackers, **kwargs
+        )
 
     def save(self, path: str, **kwargs) -> None:
         """Save the AutoEncoder model weights and configuration to path.
@@ -791,8 +792,9 @@ class StackedAutoEncoder(nn.Module, BaseAutoEncoder):
         train_loader: DataLoader,
         optimizer: torch.optim.Optimizer,
         loss_fn: nn.modules.loss._Loss,
+        trackers: list[ExperimentTracker] | None = None,
         **kwargs,
-    ) -> list[pd.DataFrame]:
+    ) -> None:
         """Perform greedy layer-wise training on autoencoders.
 
         Trains each autoencoder sequentially, using the encoders from previously
@@ -803,10 +805,9 @@ class StackedAutoEncoder(nn.Module, BaseAutoEncoder):
             train_loader: DataLoader for training data.
             optimizer: Optimizer for model parameters.
             loss_fn: Loss function for reconstruction error.
+            trackers: List of experiment trackers to log metrics to.
+                If None, no tracking is performed. Defaults to None.
             **kwargs: Additional arguments passed to train_ae_model().
-
-        Returns:
-            List of loss histories for each autoencoder, one DataFrame per layer.
 
         See Also:
             train_ae_model: Detailed parameter documentation.
@@ -815,8 +816,7 @@ class StackedAutoEncoder(nn.Module, BaseAutoEncoder):
             >>> sae = StackedAutoEncoder(config)
             >>> optimizer = torch.optim.Adam(sae.parameters(), lr=0.001)
             >>> loss_fn = torch.nn.MSELoss()
-            >>> histories = sae.greedy_fit(train_loader, optimizer, loss_fn, n_epoch=50)
-            >>> print(f"Trained {len(histories)} layers")
+            >>> sae.greedy_fit(train_loader, optimizer, loss_fn, n_epoch=50)
         """
         device = next(self.parameters()).device
         if "device" not in kwargs:
@@ -839,7 +839,6 @@ class StackedAutoEncoder(nn.Module, BaseAutoEncoder):
 
         coder_pairs = zip(self.encoders, reversed(self.decoders), strict=True)
         trained_encoders = []
-        history_autoencoders = []
 
         for i, (encoder, decoder) in enumerate(coder_pairs):
             logger.info("Training autoencoder %s", i)
@@ -847,25 +846,25 @@ class StackedAutoEncoder(nn.Module, BaseAutoEncoder):
             config = AutoEncoderConfig(encoder=encoder.config, decoder=decoder.config)
             autoencoder = AutoEncoder(config, encoder, decoder)
             autoencoder = autoencoder.to(device)
-            history = autoencoder.fit(
+            autoencoder.fit(
                 train_loader,
                 optimizer,
                 loss_fn,
+                trackers=trackers,
                 **kwargs,
                 transform=transform_fn(trained_encoders, device=device),
+                phase_prefix=f"layer_{i}",
             )
             trained_encoders.append(encoder)
-            history_autoencoders.append(history)
-
-        return history_autoencoders
 
     def fit(
         self,
         train_loader: DataLoader,
         optimizer: torch.optim.Optimizer,
         loss_fn: nn.modules.loss._Loss,
+        trackers: list[ExperimentTracker] | None = None,
         **kwargs,
-    ) -> pd.DataFrame:
+    ) -> None:
         """Perform global loss optimization of SAE.
 
         Fine-tunes the entire stacked autoencoder end-to-end after layer-wise
@@ -875,10 +874,9 @@ class StackedAutoEncoder(nn.Module, BaseAutoEncoder):
             train_loader: DataLoader for training data.
             optimizer: Optimizer for model parameters.
             loss_fn: Loss function for reconstruction error.
+            trackers: List of experiment trackers to log metrics to.
+                If None, no tracking is performed. Defaults to None.
             **kwargs: Additional arguments passed to train_ae_model().
-
-        Returns:
-            Training and validation loss history.
 
         See Also:
             train_ae_model: Detailed parameter documentation.
@@ -890,16 +888,18 @@ class StackedAutoEncoder(nn.Module, BaseAutoEncoder):
             > loss_fn = torch.nn.MSELoss()
             >
             > # Pre-train layer-wise
-            > histories = sae.greedy_fit(train_loader, optimizer, loss_fn, n_epoch=50)
+            > sae.greedy_fit(train_loader, optimizer, loss_fn, n_epoch=50)
             >
             > # Fine-tune end-to-end
-            > history = sae.fit(train_loader, optimizer, loss_fn, n_epoch=50)
+            > sae.fit(train_loader, optimizer, loss_fn, n_epoch=50)
         """
         device = next(self.parameters()).device
         if "device" not in kwargs:
             kwargs["device"] = device
 
-        return train_ae_model(self, train_loader, optimizer, loss_fn, **kwargs)
+        train_ae_model(
+            self, train_loader, optimizer, loss_fn, trackers=trackers, **kwargs
+        )
 
     def save(self, path: str, **kwargs) -> None:
         """Save the SAE model weights and configuration to path.
